@@ -1,0 +1,29 @@
+MaNGOS r10271
+ScriptDev2 r1749
+ACID r35
+UDB r392 - MaNGOS r9582 & ScriptDev2 r1639
+
+<udb>/Full_DB/ForCleanInstallOnly/create_mysql.sql
+<udb>/Full_DB/ForCleanInstallOnly/create_database_sd2.sql
+<udb:mangos:UDB_0.12.0_mangos_9582_SD2_1639.zip>/Full_DB/UDB_0.12.0_mangos_9582_SD2_1639.sql
+<udb:mangos>/Updates/0.12.0_additions/389_corepatch_mangos_9583_to_9630.sql
+<udb:mangos>/Updates/0.12.0_additions/389_updatepack_mangos.sql
+<udb:mangos>/Updates/0.12.0_additions/390_corepatch_mangos_9631_to_9763.sql
+<udb:mangos>/Updates/0.12.0_additions/390_updatepack_mangos.sql
+<udb:mangos>/Updates/0.12.0_additions/391_corepatch_mangos_9764_to_9999.sql
+<udb:mangos>/Updates/0.12.0_additions/391_updatepack_mangos.sql
+<udb:mangos>/Updates/0.12.0_additions/392_corepatch_mangos_10000_to_10258.sql
+<udb:mangos>/Updates/0.12.0_additions/392_updatepack_mangos.sql
+
+<mangos:mangos>/sql/updates/10263_01_mangos_pool_creature.sql
+<mangos:mangos>/sql/updates/10263_02_mangos_pool_gameobject.sql
+<mangos:mangos>/sql/updates/10263_03_mangos_pool_pool.sql
+<mangos:mangos>/sql/updates/10270_01_mangos_reputation_spillover_template.sql
+
+<scriptdev2:scriptdev2>/sql/scriptdev2_create_structure_mysql.sql
+<scriptdev2:scriptdev2>/sql/scriptdev2_script_full.sql
+<acid:mangos>/wotlk/3.0.4/3.0.4_acid.sql
+<scriptdev2:mangos>/sql/mangos_scriptname_full.sql
+
+<mangos:characters>/sql/characters.sql
+<mangos:realmd>/sql/realmd.sql
