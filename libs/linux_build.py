@@ -10,11 +10,6 @@ def make(make_opts):
         shutil.rmtree("objdir", ignore_errors=True)
     if make_opts.rebuild:
         subprocess.call("autoreconf --install --force", shell=True)
-        subprocess.call("aclocal", shell=True)
-        subprocess.call("autoheader", shell=True)
-        subprocess.call("autoconf", shell=True)
-        subprocess.call("automake --add-missing", shell=True)
-        subprocess.call("automake src/bindings/ScriptDev2/Makefile", shell=True)
     os.mkdir("objdir")
     os.chdir("objdir")
     if make_opts.debug: print "Current Dir: ", os.getcwd()
