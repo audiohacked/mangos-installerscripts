@@ -17,7 +17,8 @@ def make(make_opts):
     config_cmd = ["../configure --enable-cli --enable-ra",
     	"--prefix="+make_opts.mangos_destdir,
         "--sysconfdir="+make_opts.mangos_destdir+"/etc",
-	"--datadir="+make_opts.mangos_destdir]
+		"--datadir="+make_opts.mangos_destdir,
+		" LIBS=\"-framework Carbon\""]
     if make_opts.debug: print " ".join(config_cmd)
     subprocess.call(" ".join(config_cmd), shell=True)
     subprocess.call("make", shell=True)
