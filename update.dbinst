@@ -1,27 +1,18 @@
-MaNGOS r11084
-ScriptDev2 r1959
-ACID r41
-UDB r397 - MaNGOS r10545 & ScriptDev2 r1833
+MaNGOS r11928
+ScriptDev2 r2478
+ACID r46
+UDB r403 - MaNGOS r11792 & ScriptDev2 r2279
 
 <udb>/Full_DB/ForCleanInstallOnly/create_mysql.sql
-<udb>/Full_DB/ForCleanInstallOnly/create_database_sd2.sql
-<udb:mangos:UDB_0.12.1.393_mangos_10545_SD2_1833.zip>/Full_DB/UDB_0.12.1.393_mangos_10545_SD2_1833.sql
-<udb:mangos>/Updates/0.12.1_additions/393_corepatch_mangos_10259_to_10545.sql
-<udb:mangos>/Updates/0.12.1_additions/393_updatepack_mangos.sql
-<udb:mangos>/Updates/0.12.1_additions/394_corepatch_mangos_10546_to_10720.sql
-<udb:mangos>/Updates/0.12.1_additions/394_updatepack_mangos.sql
-<udb:mangos>/Updates/0.12.1_additions/395_corepatch_mangos_10721_to_10892.sql
-<udb:mangos>/Updates/0.12.1_additions/395_updatepack_mangos.sql
-<udb:mangos>/Updates/0.12.1_additions/396_updatepack_mangos.sql
-<udb:mangos>/Updates/0.12.1_additions/397_corepatch_mangos_10905_to_11064.sql
-<udb:mangos>/Updates/0.12.1_additions/397_updatepack_mangos.sql
+<udb>/Full_DB/ForCleanInstallOnly/scriptdev2_create_database.sql
+<udb:mangos:UDB_0.12.2_mangos_11792_SD2_2279.zip>/Full_DB/UDB_0.12.2_mangos_11792_SD2_2279.sql
+<udb:mangos>/Updates/0.12.2_additions/403_corepatch_mangos_11793_to_11840.sql
+<udb:mangos>/Updates/0.12.2_additions/403_updatepack_mangos.sql
 
 <scriptdev2:scriptdev2>/sql/scriptdev2_create_structure_mysql.sql
 <scriptdev2:scriptdev2>/sql/scriptdev2_script_full.sql
-<acid:mangos>/wotlk/3.0.8/3.0.8_acid.sql
+<acid:mangos>/wotlk/3.0.9/3.0.9_acid.sql
 <scriptdev2:mangos>/sql/mangos_scriptname_full.sql
 
-<udb:characters>/Updates/0.12.1_additions/393_corepatch_characters_10259_to_10545.sql
-<udb:characters>/Updates/0.12.1_additions/394_corepatch_characters_10546_to_10720.sql
-<udb:characters>/Updates/0.12.1_additions/395_corepatch_characters_10721_to_10892.sql
-<udb:characters>/Updates/0.12.1_additions/397_corepatch_characters_10905_to_11064.sql
+<mangos:characters>/sql/characters.sql
+<mangos:realmd>/sql/realmd.sql

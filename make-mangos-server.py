@@ -22,7 +22,7 @@ def parse_cmd_args():
 	parser.add_option("--sd2-patch", "--patch", "--sd2", 
 		action="store",
 		dest="sd2_patch",
-		default="MaNGOS-10938-ScriptDev2.patch")
+		default="MaNGOS-11167-ScriptDev2.patch")
 		
 	parser.add_option("--build-dir",
 		action="store",

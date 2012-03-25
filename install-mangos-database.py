@@ -78,9 +78,9 @@ def update_db_install(args):
 
 def extract_sql_files(dbquery, args):
 	if dbquery['dbsrctree'] == "mangos":
-		exec_tree = "mangos"
+		exec_tree = "MaNGOS"
 	elif dbquery['dbsrctree'] == "scriptdev2":
-		exec_tree = "mangos/src/bindings/ScriptDev2" 
+		exec_tree = "MaNGOS/src/bindings/ScriptDev2" 
 	elif dbquery['dbsrctree'] == "acid":
 		exec_tree = "sd2-acid"
 	elif dbquery['dbsrctree'] == "udb":
@@ -98,9 +98,9 @@ def extract_sql_files(dbquery, args):
 
 def execute_sql_file(dbquery, args):
 	if dbquery['dbsrctree'] == "mangos":
-		exec_tree = "mangos"
+		exec_tree = "MaNGOS"
 	elif dbquery['dbsrctree'] == "scriptdev2":
-		exec_tree = "mangos/src/bindings/ScriptDev2" 
+		exec_tree = "MaNGOS/src/bindings/ScriptDev2" 
 	elif dbquery['dbsrctree'] == "acid":
 		exec_tree = "sd2-acid"
 	elif dbquery['dbsrctree'] == "udb":
