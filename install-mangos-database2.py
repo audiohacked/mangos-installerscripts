@@ -7,137 +7,78 @@ sys.path.insert( 0, os.path.abspath("libs"))
 
 import dep_check
 
-mangos_dbversion_str = {'characters':'character_db_version',
-			'mangos':'db_version',
-			'realmd':'realmd_db_version',
-			'scriptdev2':'sd2_db_version'}
+baselist_unifieddb = (
+	'./unifieddb/Full_DB/ForCleanInstallOnly/create_mysql.sql',
+	'./unifieddb/Full_DB/ForCleanInstallOnly/scriptdev2_create_mysql.sql',)
 
-def base_dbs(args, fresh=False):
+baselist_scriptdev2 = (
+	'./MaNGOS/src/bindings/ScripDev2/sql/scriptdev2_create_structure_mysql.sql',
+	'./MaNGOS/src/bindings/ScripDev2/sql/scriptdev2_script_full.sql',)
+
+baselist_last = (
+	'./MaNGOS/sql/characters.sql',
+	'./MaNGOS/sql/realmd.sql',)
+
+def base_dbs(args, fresh=True):
 	if fresh:
-		dlist = ('mangos','scriptdev2','realm','characters')
-		flist = ('./unifieddb/Full_DB/ForCleanInstallOnly/create_mysql.sql',
-			'./unifieddb/Full_DB/ForCleanInstallOnly/scriptdev2_create_mysql.sql',
-			'./MaNGOS/src/bindings/ScripDev2/sql/scriptdev2_create_structure_mysql.sql',
-			'./MaNGOS/src/bindings/ScripDev2/sql/scriptdev2_script_full.sql')
-		nlist = ('./MaNGOS/sql/characters.sql',
-			'./MaNGOS/sql/realmd.sql')
-	else:
-		dlist = ('mangos','scriptdev2','characters')
+		for sql in baselist_unifieddb:
+			execute_sql_file(args, None, sql)
 
-	for fsql in flist:
-				
+	dlist = ('mangos','scriptdev2','realm','characters')
 	for db in dlist: 
-		loop_mangos(args, database=db);
-		loop_scriptdev2(args, database=db);
-		loop_acid(args, database=db);
 		loop_unifieddb(args, database=db);
+		loop_mangos(args, database=db);
+		loop_acid(args, database=db);
+		loop_scriptdev2(args, database=db);
+
+	if fresh:
+		for sql in baselist_last:
+			execute_sql_file(args, None, sql)
 	
-def loop_mangos(args, database=None, fresh=False):
+def loop_mangos(args, database, fresh=False):
 	""" ./MaNGOS/sql/updates/<revision>_<patchorder>_<db>_<string>.sql
 	"""
-	if fresh:
-		pass
-	else:
-		pass
+	update_loc = ('./MaNGOS/sql/updates/',)
 
-def loop_scriptdev2(args, fresh=False):
-	""" ./MaNGOS/src/bindings/ScriptDev2/sql/r<revision>_<db>.sql
+def loop_scriptdev2(args, database, fresh=False):
+	""" ./MaNGOS/src/bindings/ScriptDev2/sql/updates/r<revision>_<db>.sql
 	"""
 	if fresh:
-		pass
-	else:
-		pass
+		for sql in baselist_scriptdev2:
+			execute_sql_file(args, database, sql)
+	loc = './MaNGOS/src/bindings/ScriptDev2/sql/'
+	p = find_latest_update_dir(loc, 'updates')
+	s = check_sqlfile_db(p, '^'+database+'_')
 
-def loop_acid(args, fresh=False):
+def loop_acid(args, database, fresh=False):
 	""" ./sd2-acid/<expansion>/<version>/<version>_acid.sql
 	    ./sd2-acid/<expansion>/<version>/Service\ Release/<version>_acid.sql
-	""" 
-	if fresh:
-		pass
-	else:
-		pass
+	"""
+	update_loc = ('./sd2-acid/',)
 
-def loop_unifieddb(args, fresh=False):
+def loop_unifieddb(args, database, fresh=False):
 	""" ./unifieddb/Updates/<version>_additions/<revision>_corepatch_<db>_<start_rev>_to_<stop_rev>.sql
 	    ./unifieddb/Updates/<version>_additions/<revision>_updatepack_<db>.sql
 	"""
-	if fresh:
-		pass
-	else:
-		pass
+	""" Search for updates """
+	loc = './unifieddb/Updates/'
+	p = find_latest_update_dir(loc, '_additions')
+	s = check_sqlfile_db(p, '^'+database+'_')
+	#execute_sql_file(args, database, s)
+
+def find_latest_update_dir(location, search_string):
+	for name in os.listdir(location):
+		d = os.path.join(location,name)
+		if os.path.isdir(d) and re.search(search_string, d):
+			return d
 	
-def delete_mangos_dbs(args, full_clean=False):
-	conn = _mysql.connect(host="localhost",
-			  port=3306,
-			  user=args.username,
-			  passwd=args.passwd)
-
-	try:
-		try:
-			print "Dropping Database: mangos"
-			conn.query("DROP DATABASE mangos;")
-		except _mysql.OperationalError:
-			pass
-		
-		try:
-			print "Dropping Database: scriptdev2"
-			conn.query("DROP DATABASE scriptdev2;")
-		except _mysql.OperationalError:
-			pass
-		
-		if full_clean:
-			try:
-				print "Dropping Database: characters"
-				conn.query("DROP DATABASE characters;")
-			except _mysql.OperationalError:
-				pass
-		
-			try:
-				print "Dropping Database: realmd"
-				conn.query("DROP DATABASE realmd;")
-			except _mysql.OperationalError:
-				pass
-	finally:
-		conn.close()
-
- 
-def fresh_db_install(args):
-	print "Performing a Fresh Install"
-	delete_mangos_dbs(args, full_clean=True)
-	db_install_list = open(args.filename, 'rU')
-	for query in get_sql_entries(db_install_list):
-		extract_sql_files(query, args)
-		execute_sql_file(query, args)
-
-def update_db_install(args):
-	print "Performing an Update Install"
-	delete_mangos_dbs(args)
-	db_install_list = open(args.filename, 'rU')
-	for query in get_sql_entries(db_install_list):
-		extract_sql_files(query, args)
-		execute_sql_file(query, args)
-	
-def get_mangos_db_version(args, dbname="characters"):
-	  conn = _mysql.connect(host="localhost",
-				port=3306,
-				user=args.username,
-				passwd=args.passwd)
-	  conn.query("SHOW COLUMNS FROM "+dbname+"."+mangos_dbversion_str[dbname])
-	  result = conn.store_result()
-	  print result.fetch_row()[0][0]
+def check_sqlfile_db(path, search_string):
+	for name in os.listdir(path):
+		s = os.path.join(path, name)
+		if os.path.isfile(s) and re.match(search_string, s):
+			print s
 
 def extract_sql_files(dbquery, args):
-	if dbquery['dbsrctree'] == "mangos":
-		exec_tree = "MaNGOS"
-	elif dbquery['dbsrctree'] == "scriptdev2":
-		exec_tree = "MaNGOS/src/bindings/ScriptDev2" 
-	elif dbquery['dbsrctree'] == "acid":
-		exec_tree = "sd2-acid"
-	elif dbquery['dbsrctree'] == "udb":
-		exec_tree = "unifieddb"
-	else:
-		exec_tree = "."
-
 	if dbquery['zipfile'] != None and not args.testing:
 		print "Extracting zip: "+os.path.dirname(exec_tree+dbquery['sqlfile'])+"/"+dbquery['zipfile']
 		home = os.getcwd()
@@ -146,25 +87,9 @@ def extract_sql_files(dbquery, args):
 		zf.extract(os.path.basename(dbquery['sqlfile']))
 		os.chdir(home)
 
-def execute_sql_file(dbquery, args):
-	if dbquery['dbsrctree'] == "mangos":
-		exec_tree = "MaNGOS"
-	elif dbquery['dbsrctree'] == "scriptdev2":
-		exec_tree = "MaNGOS/src/bindings/ScriptDev2" 
-	elif dbquery['dbsrctree'] == "acid":
-		exec_tree = "sd2-acid"
-	elif dbquery['dbsrctree'] == "udb":
-		exec_tree = "unifieddb"
-	else:
-		exec_tree = "."
-
-	if dbquery['dbname'] == None:
-		dbname = ""
-	else:
-		dbname = " "+dbquery['dbname']
-
-	execute_str = "mysql -u "+args.username+args.cmd_passwd_str+dbname+" < "+exec_tree+dbquery['sqlfile']
-	
+def execute_sql_file(args, database, sql):
+	execute_str = "mysql -u "+args.username+args.cmd_passwd_str+" "+database+" < "+sql
+	if os.path.splitext(sql) != '.sql': pass	
 	if args.testing:
 		print execute_str
 	else:
@@ -179,23 +104,14 @@ def execute_sql_file(dbquery, args):
 			print >>sys.stderr, "Execution failed:", e
 	
 
-def get_sql_entries(db_install_list):
-	queries = [] 
-	buffer = db_install_list.readlines()
-	for line in buffer:
-		db_files = match_dbline.match(line)
-		if db_files != None:
-			queries.append( db_files.groupdict() )
-	return queries
-
 def parse_password_callback(option, opt, value, parser):
-		parser.values.cmd_passwd_str = " --password="+value
-		parser.values.passwd = value
+	parser.values.cmd_passwd_str = " --password="+value
+	parser.values.passwd = value
 
 def parse_update_callback(option, opt, value, parser):
-		parser.values.update = True
-		if parser.values.filename == "fresh.dbinst":
-			parser.values.filename = "update.dbinst"
+	parser.values.update = True
+	if parser.values.filename == "fresh.dbinst":
+		parser.values.filename = "update.dbinst"
 			
 def parse_cmd_args():
 	parser = optparse.OptionParser(version="%prog 2.0")
@@ -241,7 +157,6 @@ def parse_cmd_args():
 
 if __name__ == '__main__':
 	my_args = parse_cmd_args()
-	#print (my_args)
 	if os.name == "nt":
 		dep_check.win32()
 	else:
