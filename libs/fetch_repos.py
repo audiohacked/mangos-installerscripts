@@ -1,24 +1,44 @@
-import os
+import os, sys
 
 def ssl_server_trust_prompt( trust_dict ):
 	return True, 0, True
 
+def git_clone( remote_repo, local_dir=None, new=True ):
+	import dulwich, dulwich.index
+	client, host_path = dulwich.client.get_transport_and_path(remote_repo)
+	if local_dir is None:
+		local_dir = host_path.split("/")[-1]
+	if new:
+		os.mkdir(local_dir)
+		r = dulwich.repo.Repo.init(local_dir)
+	else:
+		r = dulwich.repo.Repo(local_dir)
+	remote_refs = client.fetch(host_path, r,
+		determine_wants=r.object_store.determine_wants_all,
+		progress=sys.stdout.write)
+	r["HEAD"] = remote_refs["HEAD"]
+	dulwich.index.build_index_from_tree(r.path, r.index_path(), r.object_store, r['HEAD'].tree)
+
+def git_apply( local_repo, patch ):
+	import dulwich, dulwich.index
+	f = sys.open(patch , "rU")
+	commit, diff, version = dulwich.patch.git_am_patch_split(f)
+
 def pre_build_fetch(opts):
-	import git
-	if os.path.exists("MaNGOS"):
+	if os.path.exists("mangos.git"):
 		print ("Updating MaNGOS sourcecode")
-		git.Git('MaNGOS').pull('-u')
+		git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=False)
 	else:
 		print ("MaNGOS is not present; checking out MaNGOS")
-		git.Git('.').clone('git://github.com/mangos/mangos.git','MaNGOS')
-	if os.path.exists("MaNGOS/src/bindings/ScriptDev2"):
+		git_clone('git://github.com/mangos/mangos.git')
+
+	if os.path.exists("mangos.git/src/bindings/ScriptDev2"):
 		print ("Updating ScriptDev2 sourcecode")
-		git.Git('MaNGOS/src/bindings/ScriptDev2').pull('-u');
+		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScripDev2', new=False)
 	else:
 		print ("ScriptDev2 is not present; checking out ScriptDev2")
-		git.Git('MaNGOS/src/bindings').clone('git://github.com/scriptdev2/scriptdev2.git','ScriptDev2');
-		if os.name != "nt": git.Git('MaNGOS').apply('src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
-
+		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScripDev2')
+		#if os.name != "nt": git.Git('mangos').apply('src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
 
 def post_build_fetch():
 	import pysvn

@@ -66,9 +66,9 @@ if __name__ == '__main__':
 		os.chdir(opts.build_dir)
 
 	if os.name == "nt":
-		dep_check.win32()
+		dep_check.win32(opts)
 	else:
-		dep_check.linux()
+		dep_check.linux(opts)
 
 	if opts.fetch: fetch_repos.pre_build_fetch(opts)
 	if os.name == "nt":

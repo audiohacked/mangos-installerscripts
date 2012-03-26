@@ -1,9 +1,9 @@
 import os, sys, subprocess
 
 frameworkdir = "C:\\Windows\\Microsoft.NET\\Framework\\"
-git_install_dir = "C:\\Program Files\\Git"
+git_install_dir = 'C:\\Program Files (x86)\\Git'
 
-def win32():
+def win32(opts):
 	if os.name == "nt":
 		import windows_registry
 	else:
@@ -11,8 +11,9 @@ def win32():
 		sys.exit(1)
 	print "Checking for Dependencies"
 	python_path = windows_registry.find_python()
-	vs_path = windows_registry.find_visualstudio2008()
-	sdk_path = windows_registry.find_MSPlatformSDK() 
+	if opts.build:
+		vs_path = windows_registry.find_visualstudio2008()
+		sdk_path = windows_registry.find_MSPlatformSDK() 
 	try:
 		import pysvn
 		print "---Found PySVN"
@@ -36,39 +37,35 @@ def win32():
 		sys.exit(1)
 
 	try:
-		import _mysql
+		import pymysql
 		print "---Found PyMySQL"
 	except ImportError:
-		print "---PyMySQL Not Found, Build Now!"
-		os.chdir("libs\\MySQLdb")
-		subprocess.call("ez_setup.py -U setuptools", shell=True, stdout=sys.stdout)
-		subprocess.call("easy_install .", shell=True, stdout=sys.stdout)
-		subprocess.call("easy_install .", shell=True, stdout=sys.stdout)
-		subprocess.call("easy_install .", shell=True, stdout=sys.stdout)
-		os.chdir("..\\..")
-
-	try:
-		if os.path.exists(vs_path):
-			print "---Found Visual Studio 9"
-			if sdk_path == "":
-				sdk_path = vs_path+"VC\\PlatformSDK\\"
-
-			path = vs_path+"Common7\\IDE;"+vs_path+"VC\\BIN;"
-			path += vs_path+"Common7\\Tools;"+frameworkdir+"v3.5;"
-			path += frameworkdir+"v2.0.50727;"+vs_path+"VC\\VCPackages;"
-			path += sdk_path+"bin;"
-			include = vs_path+"VC\\INCLUDE;"+sdk_path+"include;"
-			lib = vs_path+"VC\\LIB;"+sdk_path+"lib;"
-			libpath = frameworkdir+"v3.5;"+frameworkdir+"v2.0.50727;"
-			libpath += vs_path+"VC\\LIB;"
-			old_path = os.environ['path']
-			os.environ['path'] = path+old_path
-			os.environ['include'] = include
-			os.environ['lib'] = lib
-			os.environ['libpath'] = libpath
-	except TypeError:
-		print "---Visual Studio 9 Not Found"
+		print "---PyMySQL Not Found"
 		sys.exit(1)
+		
+	if opts.build:
+		try:
+			if os.path.exists(vs_path):
+				print "---Found Visual Studio 9"
+				if sdk_path == "":
+					sdk_path = vs_path+"VC\\PlatformSDK\\"
+	
+				path = vs_path+"Common7\\IDE;"+vs_path+"VC\\BIN;"
+				path += vs_path+"Common7\\Tools;"+frameworkdir+"v3.5;"
+				path += frameworkdir+"v2.0.50727;"+vs_path+"VC\\VCPackages;"
+				path += sdk_path+"bin;"
+				include = vs_path+"VC\\INCLUDE;"+sdk_path+"include;"
+				lib = vs_path+"VC\\LIB;"+sdk_path+"lib;"
+				libpath = frameworkdir+"v3.5;"+frameworkdir+"v2.0.50727;"
+				libpath += vs_path+"VC\\LIB;"
+				old_path = os.environ['path']
+				os.environ['path'] = path+old_path
+				os.environ['include'] = include
+				os.environ['lib'] = lib
+				os.environ['libpath'] = libpath
+		except TypeError:
+			print "---Visual Studio 9 Not Found"
+			sys.exit(1)
 
 def which(program):
 	def is_exe(fpath):

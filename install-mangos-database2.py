@@ -1,7 +1,6 @@
 #!/usr/bin/python
 import re, os, sys, subprocess
 import optparse
-import _mysql
 import zipfile
 sys.path.insert( 0, os.path.abspath("libs"))
 
