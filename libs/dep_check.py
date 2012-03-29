@@ -81,7 +81,7 @@ def which(program):
 				return exe_file
 	return None
 
-def linux():
+def linux(opts):
 	print "Checking for Dependencies"
 	try:
 		import pysvn
