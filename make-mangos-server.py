@@ -12,8 +12,7 @@ def parse_cmd_args():
 		install_dir="C:\\MaNGOS"
 	else:
 		install_dir="/opt/mangos"
-	parser = optparse.OptionParser(version="%prog 1.0")
-	
+
 	parser.add_option("--mangos-destdir", "--install-dir", "--destdir",
 		action="store",
 		dest="mangos_destdir",
@@ -31,8 +30,8 @@ def parse_cmd_args():
 
 	parser.add_option("--no-build",
 		action="store_false",
-	dest="build",
-	default=True)
+		dest="build",
+		default=True)
 
 	parser.add_option("--no-install",
 		action="store_false",
@@ -41,18 +40,23 @@ def parse_cmd_args():
 
 	parser.add_option("--no-fetch",
 		action="store_false",
-	dest="fetch",
-	default=True)
+		dest="fetch",
+		default=False)
+
+	parser.add_option("--no-post-fetch",
+		action="store_false",
+		dest="post_fetch",
+		default=False)
 
 	parser.add_option("--no-rebuild",
 		action="store_false",
-	dest="rebuild",
-	default=True)
+		dest="rebuild",
+		default=True)
 
 	parser.add_option("--debug",
 		action="store_true",
-	dest="debug",
-	default=False)
+		dest="debug",
+		default=False)
 
 	(options, args) = parser.parse_args()
 	return options
@@ -77,5 +81,5 @@ if __name__ == '__main__':
 	else:
 		if opts.build: linux_build.make(opts)
 	os.chdir(opts.build_dir)
-	if opts.fetch: fetch_repos.post_build_fetch()
+	if opts.post_fetch: fetch_repos.post_build_fetch()
 

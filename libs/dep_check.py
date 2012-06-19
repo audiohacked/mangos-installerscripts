@@ -21,28 +21,6 @@ def win32(opts):
 		print "---PySVN Not Found, Please Install"
 		sys.exit(1)
 
-	if os.path.exists(git_install_dir):
-		print "---Found Git"
-		os.environ['path'] += ";"+git_install_dir+"\\bin;"
-	else:
-		print "---Git Not Found"
-		sys.exit(1)
-
-	try:	
-		if os.path.exists(python_path):
-				print "---Found Python"
-				os.environ['path'] += ";"+python_path+";"+python_path+"Scripts;"
-	except TypeError:
-		print "---Python 2.5 or 2.6 not found"
-		sys.exit(1)
-
-	try:
-		import pymysql
-		print "---Found PyMySQL"
-	except ImportError:
-		print "---PyMySQL Not Found"
-		sys.exit(1)
-		
 	if opts.build:
 		try:
 			if os.path.exists(vs_path):
@@ -89,11 +67,6 @@ def linux(opts):
 	except ImportError:
 		print "---PySVN Not Found, Please Install"
 		sys.exit(1)
-
-	if os.path.basename(which("git")) == "git":
-		print "---Found Git"
-	else:
-		print "---Git Not Found" 
 
 if __name__ == '__main__':
 	win32()

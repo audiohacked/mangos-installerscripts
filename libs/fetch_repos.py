@@ -4,7 +4,7 @@ def ssl_server_trust_prompt( trust_dict ):
 	return True, 0, True
 
 def git_clone( remote_repo, local_dir=None, new=True ):
-	import dulwich, dulwich.index
+	import dulwich.index, dulwich.client, dulwich.repo
 	client, host_path = dulwich.client.get_transport_and_path(remote_repo)
 	if local_dir is None:
 		local_dir = host_path.split("/")[-1]
@@ -20,7 +20,7 @@ def git_clone( remote_repo, local_dir=None, new=True ):
 	dulwich.index.build_index_from_tree(r.path, r.index_path(), r.object_store, r['HEAD'].tree)
 
 def git_apply( local_repo, patch ):
-	import dulwich, dulwich.index
+	import dulwich.index, dulwich.repo
 	f = sys.open(patch , "rU")
 	commit, diff, version = dulwich.patch.git_am_patch_split(f)
 
@@ -30,7 +30,7 @@ def pre_build_fetch(opts):
 		git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=False)
 	else:
 		print ("MaNGOS is not present; checking out MaNGOS")
-		git_clone('git://github.com/mangos/mangos.git')
+		git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=True)
 
 	if os.path.exists("mangos.git/src/bindings/ScriptDev2"):
 		print ("Updating ScriptDev2 sourcecode")
@@ -38,7 +38,7 @@ def pre_build_fetch(opts):
 	else:
 		print ("ScriptDev2 is not present; checking out ScriptDev2")
 		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScripDev2')
-		#if os.name != "nt": git.Git('mangos').apply('src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
+		#if os.name != "nt": git_apply('mangos.git', 'src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
 
 def post_build_fetch():
 	import pysvn
