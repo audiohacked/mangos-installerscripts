@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import	os, sys, optparse
+import	os, sys
 sys.path.insert( 0, os.path.abspath("libs"))
 
 import dep_check
@@ -7,12 +7,14 @@ import fetch_repos
 import windows_build
 import linux_build
 
+from optparse import OptionParser
 def parse_cmd_args():
 	if os.name == "nt":
 		install_dir="C:\\MaNGOS"
 	else:
 		install_dir="/opt/mangos"
 
+	parser = OptionParser()
 	parser.add_option("--mangos-destdir", "--install-dir", "--destdir",
 		action="store",
 		dest="mangos_destdir",
@@ -41,12 +43,12 @@ def parse_cmd_args():
 	parser.add_option("--no-fetch",
 		action="store_false",
 		dest="fetch",
-		default=False)
+		default=True)
 
 	parser.add_option("--no-post-fetch",
 		action="store_false",
 		dest="post_fetch",
-		default=False)
+		default=True)
 
 	parser.add_option("--no-rebuild",
 		action="store_false",
@@ -63,23 +65,29 @@ def parse_cmd_args():
 
 if __name__ == '__main__':
 	opts = parse_cmd_args()
+
 	if opts.debug: print "Src Build Dir:", opts.build_dir
 	if opts.build_dir == ".":
 		opts.build_dir = os.getcwd()
 	else:
 		os.chdir(opts.build_dir)
-
+	if opts.debug: print "Dep Check!!!!"
 	if os.name == "nt":
 		dep_check.win32(opts)
 	else:
 		dep_check.linux(opts)
 
+	if opts.debug: print "Fetching Pre-Build"
 	if opts.fetch: fetch_repos.pre_build_fetch(opts)
+
+	if opts.debug: print "Building Server"
 	if os.name == "nt":
 		if opts.build: windows_build.make()
 		if opts.install: windows_build.install(opts)
 	else:
 		if opts.build: linux_build.make(opts)
 	os.chdir(opts.build_dir)
+
+	if opts.debug: print "Fetching Post-Build"
 	if opts.post_fetch: fetch_repos.post_build_fetch()
 
