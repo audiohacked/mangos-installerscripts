@@ -34,9 +34,9 @@ def find_MSPlatformSDK():
     
 #def find_git():
 #    with _winreg.OpenKey(HKEY_LOCAL_MACHINE, "\\SOFTWARE\\") as key:
-#        print _winreg.QueryValue(key, "")
+#        print (_winreg.QueryValue(key, ""))
     
 if __name__ == '__main__':
-    print find_python()
-    print find_visualstudio2008()
-    print find_MSPlatformSDK()
+    print (find_python())
+    print (find_visualstudio2008())
+    print (find_MSPlatformSDK())

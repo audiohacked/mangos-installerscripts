@@ -59,6 +59,11 @@ def parse_cmd_args():
 		action="store_true",
 		dest="debug",
 		default=False)
+	
+	parser.add_option("--no-patch",
+		action="store_false",
+		dest="patch",
+		default=True)
 
 	(options, args) = parser.parse_args()
 	return options
@@ -66,21 +71,21 @@ def parse_cmd_args():
 if __name__ == '__main__':
 	opts = parse_cmd_args()
 
-	if opts.debug: print "Src Build Dir:", opts.build_dir
+	if opts.debug: print ("Src Build Dir:", opts.build_dir)
 	if opts.build_dir == ".":
 		opts.build_dir = os.getcwd()
 	else:
 		os.chdir(opts.build_dir)
-	if opts.debug: print "Dep Check!!!!"
+	if opts.debug: print ("Dep Check!!!!")
 	if os.name == "nt":
 		dep_check.win32(opts)
 	else:
 		dep_check.linux(opts)
 
-	if opts.debug: print "Fetching Pre-Build"
+	if opts.debug: print ("Fetching Pre-Build")
 	if opts.fetch: fetch_repos.pre_build_fetch(opts)
 
-	if opts.debug: print "Building Server"
+	if opts.debug: print ("Building Server")
 	if os.name == "nt":
 		if opts.build: windows_build.make()
 		if opts.install: windows_build.install(opts)
@@ -88,6 +93,6 @@ if __name__ == '__main__':
 		if opts.build: linux_build.make(opts)
 	os.chdir(opts.build_dir)
 
-	if opts.debug: print "Fetching Post-Build"
-	if opts.post_fetch: fetch_repos.post_build_fetch()
+	if opts.debug: print ("Fetching Post-Build")
+	if opts.post_fetch: fetch_repos.post_build_fetch(opts)
 

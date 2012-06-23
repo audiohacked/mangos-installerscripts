@@ -7,24 +7,24 @@ def win32(opts):
 	if os.name == "nt":
 		import windows_registry
 	else:
-		print "You are trying to run the windows dep checker on a non-Windows system"
+		print ("You are trying to run the windows dep checker on a non-Windows system")
 		sys.exit(1)
-	print "Checking for Dependencies"
+	print ("Checking for Dependencies")
 	python_path = windows_registry.find_python()
 	if opts.build:
 		vs_path = windows_registry.find_visualstudio2008()
 		sdk_path = windows_registry.find_MSPlatformSDK() 
 	try:
 		import pysvn
-		print "---Found PySVN"
+		print ("---Found PySVN")
 	except ImportError:
-		print "---PySVN Not Found, Please Install"
+		print ("---PySVN Not Found, Please Install")
 		sys.exit(1)
 
 	if opts.build:
 		try:
 			if os.path.exists(vs_path):
-				print "---Found Visual Studio 9"
+				print ("---Found Visual Studio 9")
 				if sdk_path == "":
 					sdk_path = vs_path+"VC\\PlatformSDK\\"
 	
@@ -42,7 +42,7 @@ def win32(opts):
 				os.environ['lib'] = lib
 				os.environ['libpath'] = libpath
 		except TypeError:
-			print "---Visual Studio 9 Not Found"
+			print ("---Visual Studio 9 Not Found")
 			sys.exit(1)
 
 def which(program):
@@ -60,13 +60,14 @@ def which(program):
 	return None
 
 def linux(opts):
-	print "Checking for Dependencies"
+	print ("Checking for Dependencies")
 	try:
 		import pysvn
-		print "---Found PySVN"
+		print ("---Found PySVN")
 	except ImportError:
-		print "---PySVN Not Found, Please Install"
+		print ("---PySVN Not Found, Please Install")
 		sys.exit(1)
 
 if __name__ == '__main__':
 	win32()
+	
