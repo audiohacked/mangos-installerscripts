@@ -4,25 +4,34 @@ def ssl_server_trust_prompt( trust_dict ):
 	return True, 0, True
 
 def git_clone( remote_repo, local_dir=None, new=True ):
-	import dulwich.index, dulwich.client, dulwich.repo
-	client, host_path = dulwich.client.get_transport_and_path(remote_repo)
-	if local_dir is None:
-		local_dir = host_path.split("/")[-1]
-	if new:
-		os.mkdir(local_dir)
-		r = dulwich.repo.Repo.init(local_dir)
-	else:
-		r = dulwich.repo.Repo(local_dir)
-	remote_refs = client.fetch(host_path, r,
-		determine_wants=r.object_store.determine_wants_all,
-		progress=sys.stdout.write)
-	r["HEAD"] = remote_refs["HEAD"]
-	dulwich.index.build_index_from_tree(r.path, r.index_path(), r.object_store, r['HEAD'].tree)
+	import dulwich.index, dulwich.client, dulwich.repo, urllib
+	try:
+		client, host_path = dulwich.client.get_transport_and_path(remote_repo)
+		if local_dir is None:
+			local_dir = host_path.split("/")[-1]
+		if new:
+			os.mkdir(local_dir)
+			r = dulwich.repo.Repo.init(local_dir)
+		else:
+			r = dulwich.repo.Repo(local_dir)
+		remote_refs = client.fetch(host_path, r)
+		r['HEAD'] = remote_refs['refs/heads/master']
+		dulwich.index.build_index_from_tree(r.path, r.index_path(), r.object_store, r['HEAD'].tree)
+	except:
+		pass
+	finally:
+		print("---Sorry! There was a fatal error in cloning!")
+		print("---   Please try cloning manually "+remote_repo+" into "+local_dir)
 
 def git_apply( local_repo, patch ):
 	import dulwich.index, dulwich.repo, dulwich.patch
-	f = open(patch , "rU")
-	commit, diff, version = dulwich.patch.git_am_patch_split(f)
+	try:
+		f = open(patch , "rU")
+		commit, diff, version = dulwich.patch.git_am_patch_split(f)
+	except:
+		pass
+	finally:
+		print("---Sorry! Unable to auto patch! Please try manually!")
 
 def pre_build_fetch(opts):
 	if os.path.exists("mangos.git"):
@@ -39,8 +48,9 @@ def pre_build_fetch(opts):
 		print("ScriptDev2 is not present; checking out ScriptDev2")
 		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScriptDev2')
 
-	if opts.debug: print("Applying ScriptDev2 Patch for MaNGOS")
-	if opts.patch and os.name != "nt": git_apply('mangos.git', 'mangos.git/src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
+	if opts.patch and os.name != "nt":
+		print("Applying ScriptDev2 Patch for MaNGOS")
+		git_apply('mangos.git', 'mangos.git/src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
 
 def post_build_fetch(opts):
 	import pysvn
