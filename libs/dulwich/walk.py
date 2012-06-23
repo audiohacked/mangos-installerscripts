@@ -19,18 +19,12 @@
 """General implementation of walking commits and their contents."""
 
 
-try:
-    from collections import defaultdict
-except ImportError:
-    from _compat import defaultdict
+from collections import defaultdict
 
 import collections
 import heapq
 import itertools
 
-from dulwich._compat import (
-    all,
-    )
 from dulwich.diff_tree import (
     RENAME_CHANGE_TYPES,
     tree_changes,
@@ -132,7 +126,7 @@ class _CommitTimeQueue(object):
                     todo.append(self._store[parent])
                 excluded.add(parent)
 
-    def next(self):
+    def __next__(self):
         if self._is_finished:
             return None
         while self._pq:
@@ -250,7 +244,7 @@ class Walker(object):
             if changed_path == followed_path:
                 return True
             if (changed_path.startswith(followed_path) and
-                changed_path[len(followed_path)] == '/'):
+                changed_path[len(followed_path)] == b'/'[0]):
                 return True
         return False
 
@@ -301,7 +295,7 @@ class Walker(object):
     def _next(self):
         max_entries = self.max_entries
         while max_entries is None or self._num_entries < max_entries:
-            entry = self._queue.next()
+            entry = next(self._queue)
             if entry is not None:
                 self._out_queue.append(entry)
             if entry is None or len(self._out_queue) > _MAX_EXTRA_COMMITS:

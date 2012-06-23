@@ -22,14 +22,38 @@ These patches are basically unified diffs with some extra metadata tacked
 on.
 """
 
+from io import StringIO
 from difflib import SequenceMatcher
-import rfc822
+import email
+import email.parser
 import time
 
 from dulwich.objects import (
     Commit,
     S_ISGITLINK,
     )
+
+def _make_writer(f):
+    if hasattr(f, 'encoding'):
+        # It's probably a string writer
+        def _writer(s):
+            if isinstance(s, bytes):
+                f.write(s.decode('utf-8'))
+            elif isinstance(s, str):
+                f.write(s)
+            else:
+                raise TypeError('only strings and bytes supported')
+    else:
+        # It's probably a bytes writer
+        def _writer(s):
+            if isinstance(s, bytes):
+                f.write(s)
+            elif isinstance(s, str):
+                f.write(s.encode('utf-8'))
+            else:
+                raise TypeError('only strings and bytes supported')
+    return _writer
+
 
 def write_commit_patch(f, commit, contents, progress, version=None):
     """Write a individual file patch.
@@ -39,29 +63,31 @@ def write_commit_patch(f, commit, contents, progress, version=None):
     :return: tuple with filename and contents
     """
     (num, total) = progress
-    f.write("From %s %s\n" % (commit.id, time.ctime(commit.commit_time)))
-    f.write("From: %s\n" % commit.author)
-    f.write("Date: %s\n" % time.strftime("%a, %d %b %Y %H:%M:%S %Z"))
-    f.write("Subject: [PATCH %d/%d] %s\n" % (num, total, commit.message))
-    f.write("\n")
-    f.write("---\n")
+    write = f.write
+
+    write(b'From ' + commit.id + b' ' + time.ctime(commit.commit_time).encode('ascii') + b'\n')
+    write(b'From: ' + commit.author + b'\n')
+    write(b'Date: ' + time.strftime("%a, %d %b %Y %H:%M:%S %Z").encode('ascii') + b'\n')
+    write(b'Subject: [PATCH ' + str(num).encode('ascii') + b'/' + str(total).encode('ascii') + b'] ' + commit.message + b'\n')
+    write(b'\n')
+    write(b'---\n')
     try:
         import subprocess
-        p = subprocess.Popen(["diffstat"], stdout=subprocess.PIPE,
+        p = subprocess.Popen(['diffstat'], stdout=subprocess.PIPE,
                              stdin=subprocess.PIPE)
-    except (ImportError, OSError), e:
+    except (ImportError, OSError) as e:
         pass # diffstat not available?
     else:
         (diffstat, _) = p.communicate(contents)
-        f.write(diffstat)
-        f.write("\n")
-    f.write(contents)
-    f.write("-- \n")
+        write(diffstat)
+        write(b'\n')
+    write(contents)
+    write(b'-- \n')
     if version is None:
         from dulwich import __version__ as dulwich_version
-        f.write("Dulwich %d.%d.%d\n" % dulwich_version)
+        write(('Dulwich %d.%d.%d\n' % dulwich_version).encode('ascii'))
     else:
-        f.write("%s\n" % version)
+        write(version + b'\n')
 
 
 def get_summary(commit):
@@ -70,7 +96,7 @@ def get_summary(commit):
     :param commit: Commit
     :return: Summary string
     """
-    return commit.message.splitlines()[0].replace(" ", "-")
+    return commit.message.decode('utf-8').splitlines()[0].replace(" ", "-")
 
 
 def unified_diff(a, b, fromfile='', tofile='', n=3):
@@ -103,8 +129,7 @@ def unified_diff(a, b, fromfile='', tofile='', n=3):
                     yield '+' + line
 
 
-def write_object_diff(f, store, (old_path, old_mode, old_id),
-                                (new_path, new_mode, new_id)):
+def write_object_diff(f, store, old_tuple, new_tuple):
     """Write the diff for an object.
 
     :param f: File-like object to write to
@@ -114,18 +139,29 @@ def write_object_diff(f, store, (old_path, old_mode, old_id),
 
     :note: the tuple elements should be None for nonexistant files
     """
-    def shortid(hexsha):
-        if hexsha is None:
+
+    (old_path, old_mode, old_id) = old_tuple
+    (new_path, new_mode, new_id) = new_tuple
+
+    if isinstance(old_path, bytes):
+        old_path = old_path.decode('utf-8')
+    if isinstance(new_path, bytes):
+        new_path = new_path.decode('utf-8')
+
+    write = _make_writer(f)
+
+    def shortid(sha):
+        if sha is None:
             return "0" * 7
         else:
-            return hexsha[:7]
-    def lines(mode, hexsha):
-        if hexsha is None:
+            return sha[:7].decode('ascii')
+    def lines(mode, sha):
+        if sha is None:
             return []
         elif S_ISGITLINK(mode):
-            return ["Submodule commit " + hexsha + "\n"]
+            return ["Submodule commit " + sha.decode('ascii') + "\n"]
         else:
-            return store[hexsha].data.splitlines(True)
+            return [l.decode('utf-8') for l in store[sha].data.splitlines(True)]
     if old_path is None:
         old_path = "/dev/null"
     else:
@@ -134,26 +170,25 @@ def write_object_diff(f, store, (old_path, old_mode, old_id),
         new_path = "/dev/null"
     else:
         new_path = "b/%s" % new_path
-    f.write("diff --git %s %s\n" % (old_path, new_path))
+    write("diff --git %s %s\n" % (old_path, new_path))
     if old_mode != new_mode:
         if new_mode is not None:
             if old_mode is not None:
-                f.write("old mode %o\n" % old_mode)
-            f.write("new mode %o\n" % new_mode)
+                write("old mode %o\n" % old_mode)
+            write("new mode %o\n" % new_mode)
         else:
-            f.write("deleted mode %o\n" % old_mode)
-    f.write("index %s..%s" % (shortid(old_id), shortid(new_id)))
+            write("deleted mode %o\n" % old_mode)
+    write("index %s..%s" % (shortid(old_id), shortid(new_id)))
     if new_mode is not None:
-        f.write(" %o" % new_mode)
-    f.write("\n")
+        write(" %o" % new_mode)
+    write('\n')
     old_contents = lines(old_mode, old_id)
     new_contents = lines(new_mode, new_id)
-    f.writelines(unified_diff(old_contents, new_contents,
-        old_path, new_path))
+    for line in unified_diff(old_contents, new_contents, old_path, new_path):
+        write(line)
 
 
-def write_blob_diff(f, (old_path, old_mode, old_blob),
-                       (new_path, new_mode, new_blob)):
+def write_blob_diff(f, old_tuple, new_tuple):
     """Write diff file header.
 
     :param f: File-like object to write to
@@ -162,14 +197,25 @@ def write_blob_diff(f, (old_path, old_mode, old_blob),
 
     :note: The use of write_object_diff is recommended over this function.
     """
+
+    (old_path, old_mode, old_blob) = old_tuple
+    (new_path, new_mode, new_blob) = new_tuple
+
+    if isinstance(old_path, bytes):
+        old_path = old_path.decode('utf-8')
+    if isinstance(new_path, bytes):
+        new_path = new_path.decode('utf-8')
+
+    write = _make_writer(f)
+
     def blob_id(blob):
         if blob is None:
             return "0" * 7
         else:
-            return blob.id[:7]
+            return blob.id[:7].decode('ascii')
     def lines(blob):
         if blob is not None:
-            return blob.data.splitlines(True)
+            return [l.decode('utf-8') for l in blob.data.splitlines(True)]
         else:
             return []
     if old_path is None:
@@ -180,22 +226,22 @@ def write_blob_diff(f, (old_path, old_mode, old_blob),
         new_path = "/dev/null"
     else:
         new_path = "b/%s" % new_path
-    f.write("diff --git %s %s\n" % (old_path, new_path))
+    write("diff --git %s %s\n" % (old_path, new_path))
     if old_mode != new_mode:
         if new_mode is not None:
             if old_mode is not None:
-                f.write("old mode %o\n" % old_mode)
-            f.write("new mode %o\n" % new_mode)
+                write("old mode %o\n" % old_mode)
+            write("new mode %o\n" % new_mode)
         else:
-            f.write("deleted mode %o\n" % old_mode)
-    f.write("index %s..%s" % (blob_id(old_blob), blob_id(new_blob)))
+            write("deleted mode %o\n" % old_mode)
+    write("index %s..%s" % (blob_id(old_blob), blob_id(new_blob)))
     if new_mode is not None:
-        f.write(" %o" % new_mode)
-    f.write("\n")
+        write(" %o" % new_mode)
+    write("\n")
     old_contents = lines(old_blob)
     new_contents = lines(new_blob)
-    f.writelines(unified_diff(old_contents, new_contents,
-        old_path, new_path))
+    for line in unified_diff(old_contents, new_contents, old_path, new_path):
+        write(line)
 
 
 def write_tree_diff(f, store, old_tree, new_tree):
@@ -217,10 +263,14 @@ def git_am_patch_split(f):
     :param f: File-like object to parse
     :return: Tuple with commit object, diff contents and git version
     """
-    msg = rfc822.Message(f)
+
+    parser = email.parser.Parser()
+    msg = parser.parse(f)
+
     c = Commit()
-    c.author = msg["from"]
-    c.committer = msg["from"]
+    c.author = msg["from"].encode('utf-8')
+    c.committer = msg["from"].encode('utf-8')
+
     try:
         patch_tag_start = msg["subject"].index("[PATCH")
     except ValueError:
@@ -228,26 +278,30 @@ def git_am_patch_split(f):
     else:
         close = msg["subject"].index("] ", patch_tag_start)
         subject = msg["subject"][close+2:]
-    c.message = subject.replace("\n", "") + "\n"
+    c.message = subject.replace("\n", "").encode('utf-8') + b"\n"
     first = True
-    for l in f:
+
+    body = StringIO(msg.get_payload())
+
+    for l in body:
         if l == "---\n":
             break
         if first:
             if l.startswith("From: "):
-                c.author = l[len("From: "):].rstrip()
+                c.author = l[len("From: "):].rstrip().encode('utf-8')
             else:
-                c.message += "\n" + l
+                c.message += b"\n" + l.encode('utf-8')
             first = False
         else:
-            c.message += l
-    diff = ""
-    for l in f:
+            c.message += l.encode('utf-8')
+    diff = ''
+    for l in body:
         if l == "-- \n":
             break
         diff += l
     try:
-        version = f.next().rstrip("\n")
+        version = body.__next__().rstrip("\n")
     except StopIteration:
         version = None
+
     return c, diff, version

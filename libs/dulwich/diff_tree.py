@@ -18,18 +18,13 @@
 
 """Utilities for diffing files and trees."""
 
-try:
-    from collections import defaultdict
-except ImportError:
-    from dulwich._compat import defaultdict
+from collections import defaultdict
 
-from cStringIO import StringIO
+from io import BytesIO
 import itertools
 import stat
 
-from dulwich._compat import (
-    namedtuple,
-    )
+from collections import namedtuple
 from dulwich.objects import (
     S_ISGITLINK,
     TreeEntry,
@@ -73,7 +68,6 @@ def _tree_entries(path, tree):
         result.append(entry.in_path(path))
     return result
 
-
 def _merge_entries(path, tree1, tree2):
     """Merge the entries of two trees.
 
@@ -105,9 +99,9 @@ def _merge_entries(path, tree1, tree2):
             result.append((entry1, entry2))
             i1 += 1
             i2 += 1
-    for i in xrange(i1, len1):
+    for i in range(i1, len1):
         result.append((entries1[i], _NULL_ENTRY))
-    for i in xrange(i2, len2):
+    for i in range(i2, len2):
         result.append((_NULL_ENTRY, entries2[i]))
     return result
 
@@ -137,7 +131,7 @@ def walk_trees(store, tree1_id, tree2_id, prune_identical=False):
     # This could be fairly easily generalized to >2 trees if we find a use case.
     mode1 = tree1_id and stat.S_IFDIR or None
     mode2 = tree2_id and stat.S_IFDIR or None
-    todo = [(TreeEntry('', mode1, tree1_id), TreeEntry('', mode2, tree2_id))]
+    todo = [(TreeEntry(b'', mode1, tree1_id), TreeEntry(b'', mode2, tree2_id))]
     while todo:
         entry1, entry2 = todo.pop()
         is_tree1 = _is_tree(entry1)
@@ -180,6 +174,7 @@ def tree_changes(store, tree1_id, tree2_id, want_unchanged=False,
 
     entries = walk_trees(store, tree1_id, tree2_id,
                          prune_identical=(not want_unchanged))
+
     for entry1, entry2 in entries:
         if entry1 == entry2 and not want_unchanged:
             continue
@@ -257,7 +252,7 @@ def tree_changes_for_merge(store, parent_tree_ids, tree_id,
     change_type = lambda c: c.type
 
     # Yield only conflicting changes.
-    for _, changes in sorted(changes_by_path.iteritems()):
+    for _, changes in sorted(changes_by_path.items()):
         assert len(changes) == num_parents
         have = [c for c in changes if c is not None]
         if _all_eq(have, change_type, CHANGE_DELETE):
@@ -283,7 +278,7 @@ def _count_blocks(obj):
     :return: A dict of block hashcode -> total bytes occurring.
     """
     block_counts = defaultdict(int)
-    block = StringIO()
+    block = BytesIO()
     n = 0
 
     # Cache attrs as locals to avoid expensive lookups in the inner loop.
@@ -293,9 +288,10 @@ def _count_blocks(obj):
     block_getvalue = block.getvalue
 
     for c in itertools.chain(*obj.as_raw_chunks()):
+        c = bytes((c,)) # Convert int to bytes object
         block_write(c)
         n += 1
-        if c == '\n' or n == _BLOCK_SIZE:
+        if c == b'\n' or n == _BLOCK_SIZE:
             value = block_getvalue()
             block_counts[hash(value)] += len(value)
             block_seek(0)
@@ -319,7 +315,7 @@ def _common_bytes(blocks1, blocks2):
     if len(blocks1) > len(blocks2):
         blocks1, blocks2 = blocks2, blocks1
     score = 0
-    for block, count1 in blocks1.iteritems():
+    for block, count1 in blocks1.items():
         count2 = blocks2.get(block)
         if count2:
             score += min(count1, count2)
@@ -447,9 +443,9 @@ class RenameDetector(object):
 
         add_paths = set()
         delete_paths = set()
-        for sha, sha_deletes in delete_map.iteritems():
+        for sha, sha_deletes in delete_map.items():
             sha_adds = add_map[sha]
-            for (old, is_delete), new in itertools.izip(sha_deletes, sha_adds):
+            for (old, is_delete), new in zip(sha_deletes, sha_adds):
                 if stat.S_IFMT(old.mode) != stat.S_IFMT(new.mode):
                     continue
                 if is_delete:
@@ -548,7 +544,7 @@ class RenameDetector(object):
 
         self._adds = [a for a in self._adds if a.new.path not in modifies]
         self._deletes = [a for a in self._deletes if a.new.path not in modifies]
-        self._changes += modifies.values()
+        self._changes += list(modifies.values())
 
     def _sorted_changes(self):
         result = []

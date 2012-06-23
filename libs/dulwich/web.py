@@ -18,17 +18,14 @@
 
 """HTTP server for dulwich that implements the git smart HTTP protocol."""
 
-from cStringIO import StringIO
+from io import BytesIO
 import gzip
 import os
 import re
 import sys
 import time
 
-try:
-    from urlparse import parse_qs
-except ImportError:
-    from dulwich._compat import parse_qs
+from urllib.parse import parse_qs
 from dulwich import log_utils
 from dulwich.protocol import (
     ReceivableProtocol,
@@ -42,7 +39,10 @@ from dulwich.server import (
     generate_info_refs,
     generate_objects_info_packs,
     )
-
+from wsgiref.simple_server import (
+    WSGIRequestHandler,
+    make_server,
+)
 
 logger = log_utils.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def url_prefix(mat):
         original string. Normalized to start with one leading slash and end with
         zero.
     """
-    return '/' + mat.string[:mat.start()].strip('/')
+    return b'/' + mat.string[:mat.start()].encode('utf-8').strip(b'/')
 
 
 def get_repo(backend, mat):
@@ -97,7 +97,7 @@ def send_file(req, f, content_type):
     :return: Iterator over the contents of the file, as chunks.
     """
     if f is None:
-        yield req.not_found('File not found')
+        yield req.not_found(b'File not found')
         return
     try:
         req.respond(HTTP_OK, content_type)
@@ -109,7 +109,7 @@ def send_file(req, f, content_type):
         f.close()
     except IOError:
         f.close()
-        yield req.error('Error reading file')
+        yield req.error(b'Error reading file')
     except:
         f.close()
         raise
@@ -128,16 +128,16 @@ def get_text_file(req, backend, mat):
 
 
 def get_loose_object(req, backend, mat):
-    sha = mat.group(1) + mat.group(2)
+    sha = (mat.group(1) + mat.group(2)).encode('ascii')
     logger.info('Sending loose object %s', sha)
     object_store = get_repo(backend, mat).object_store
     if not object_store.contains_loose(sha):
-        yield req.not_found('Object not found')
+        yield req.not_found(b'Object not found')
         return
     try:
         data = object_store[sha].as_legacy_object()
     except IOError:
-        yield req.error('Error reading object')
+        yield req.error(b'Error reading object')
         return
     req.cache_forever()
     req.respond(HTTP_OK, 'application/x-git-loose-object')
@@ -164,18 +164,18 @@ def get_info_refs(req, backend, mat):
     params = parse_qs(req.environ['QUERY_STRING'])
     service = params.get('service', [None])[0]
     if service and not req.dumb:
-        handler_cls = req.handlers.get(service, None)
+        handler_cls = req.handlers.get(service.encode('ascii'), None)
         if handler_cls is None:
-            yield req.forbidden('Unsupported service %s' % service)
+            yield req.forbidden(('Unsupported service %s' % service).encode('ascii'))
             return
         req.nocache()
         write = req.respond(HTTP_OK, 'application/x-%s-advertisement' % service)
-        proto = ReceivableProtocol(StringIO().read, write)
-        handler = handler_cls(backend, [url_prefix(mat)], proto,
-                              http_req=req, advertise_refs=True)
-        handler.proto.write_pkt_line('# service=%s\n' % service)
-        handler.proto.write_pkt_line(None)
-        handler.handle()
+        req2 = BytesIO()
+        with ReceivableProtocol(req2.read, write, req2.close) as proto:
+            with handler_cls(backend, [url_prefix(mat)], proto, http_req=req, advertise_refs=True) as handler:
+                handler.proto.write_pkt_line(('# service=%s\n' % service).encode('ascii'))
+                handler.proto.write_pkt_line(None)
+                handler.handle()
     else:
         # non-smart fallback
         # TODO: select_getanyfile() (see http-backend.c)
@@ -208,11 +208,14 @@ class _LengthLimitedFile(object):
 
     def read(self, size=-1):
         if self._bytes_avail <= 0:
-            return ''
+            return b''
         if size == -1 or size > self._bytes_avail:
             size = self._bytes_avail
         self._bytes_avail -= size
         return self._input.read(size)
+
+    def close(self):
+        pass
 
     # TODO: support more methods as necessary
 
@@ -220,7 +223,7 @@ class _LengthLimitedFile(object):
 def handle_service_request(req, backend, mat):
     service = mat.group().lstrip('/')
     logger.info('Handling service request for %s', service)
-    handler_cls = req.handlers.get(service, None)
+    handler_cls = req.handlers.get(service.encode('utf-8'), None)
     if handler_cls is None:
         yield req.forbidden('Unsupported service %s' % service)
         return
@@ -328,11 +331,12 @@ class HTTPGitApplication(object):
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO']
         method = environ['REQUEST_METHOD']
+
         req = HTTPGitRequest(environ, start_response, dumb=self.dumb,
                              handlers=self.handlers)
         # environ['QUERY_STRING'] has qs args
         handler = None
-        for smethod, spath in self.services.iterkeys():
+        for smethod, spath in self.services.keys():
             if smethod != method:
                 continue
             mat = spath.search(path)
@@ -340,8 +344,22 @@ class HTTPGitApplication(object):
                 handler = self.services[smethod, spath]
                 break
         if handler is None:
-            return req.not_found('Sorry, that method is not supported')
+            return req.not_found(b'Sorry, that method is not supported')
         return handler(req, self.backend, mat)
+
+
+class HTTPGitRequestHandler(WSGIRequestHandler):
+    """Handler that uses dulwich's logger for logging exceptions."""
+
+    def log_exception(self, exc_info):
+        logger.exception('Exception happened during processing of request',
+                         exc_info=exc_info)
+
+    def log_message(self, format, *args):
+        logger.info(format, *args)
+
+    def log_error(self, *args):
+        logger.error(*args)
 
 
 class GunzipFilter(object):
@@ -354,6 +372,7 @@ class GunzipFilter(object):
 
     def __call__(self, environ, start_response):
         if environ.get('HTTP_CONTENT_ENCODING', '') == 'gzip':
+            zlength = int(environ.get('CONTENT_LENGTH', '0'))
             environ.pop('HTTP_CONTENT_ENCODING')
             if 'CONTENT_LENGTH' in environ:
                 del environ['CONTENT_LENGTH']
@@ -391,53 +410,22 @@ def make_wsgi_chain(backend, dumb=False, handlers=None):
     return wrapped_app
 
 
-# The reference server implementation is based on wsgiref, which is not
-# distributed with python 2.4. If wsgiref is not present, users will not be able
-# to use the HTTP server without a little extra work.
-try:
-    from wsgiref.simple_server import (
-        WSGIRequestHandler,
-        make_server,
-        )
+def main(argv=sys.argv):
+    """Entry point for starting an HTTP git server."""
+    if len(argv) > 1:
+        gitdir = argv[1]
+    else:
+        gitdir = os.getcwd()
 
-    class HTTPGitRequestHandler(WSGIRequestHandler):
-        """Handler that uses dulwich's logger for logging exceptions."""
+    # TODO: allow serving on other addresses/ports via command-line flag
+    listen_addr=''
+    port = 8000
 
-        def log_exception(self, exc_info):
-            logger.exception('Exception happened during processing of request',
-                             exc_info=exc_info)
-
-        def log_message(self, format, *args):
-            logger.info(format, *args)
-
-        def log_error(self, *args):
-            logger.error(*args)
-
-
-    def main(argv=sys.argv):
-        """Entry point for starting an HTTP git server."""
-        if len(argv) > 1:
-            gitdir = argv[1]
-        else:
-            gitdir = os.getcwd()
-
-        # TODO: allow serving on other addresses/ports via command-line flag
-        listen_addr=''
-        port = 8000
-
-        log_utils.default_logging_config()
-        backend = DictBackend({'/': Repo(gitdir)})
-        app = make_wsgi_chain(backend)
-        server = make_server(listen_addr, port, app,
-                             handler_class=HTTPGitRequestHandler)
-        logger.info('Listening for HTTP connections on %s:%d', listen_addr,
-                    port)
-        server.serve_forever()
-
-except ImportError:
-    # No wsgiref found; don't provide the reference functionality, but leave the
-    # rest of the WSGI-based implementation.
-    def main(argv=sys.argv):
-        """Stub entry point for failing to start a server without wsgiref."""
-        sys.stderr.write('Sorry, the wsgiref module is required for dul-web.\n')
-        sys.exit(1)
+    log_utils.default_logging_config()
+    backend = DictBackend({b'/': Repo(gitdir)})
+    app = make_wsgi_chain(backend)
+    server = make_server(listen_addr, port, app,
+                         handler_class=HTTPGitRequestHandler)
+    logger.info('Listening for HTTP connections on %s:%d', listen_addr,
+                port)
+    server.serve_forever()

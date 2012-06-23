@@ -27,13 +27,14 @@ from dulwich.objects import (
     S_IFGITLINK,
     S_ISGITLINK,
     Tree,
-    hex_to_sha,
     sha_to_hex,
+    hex_to_sha,
     )
 from dulwich.pack import (
     SHA1Reader,
     SHA1Writer,
     )
+
 
 
 def pathsplit(path):
@@ -43,9 +44,9 @@ def pathsplit(path):
     :return: Tuple with directory name and basename
     """
     try:
-        (dirname, basename) = path.rsplit("/", 1)
+        (dirname, basename) = path.rsplit(b"/", 1)
     except ValueError:
-        return ("", path)
+        return (b"", path)
     else:
         return (dirname, basename)
 
@@ -54,12 +55,12 @@ def pathjoin(*args):
     """Join a /-delimited path.
 
     """
-    return "/".join([p for p in args if p])
+    return b'/'.join([p for p in args if p])
 
 
 def read_cache_time(f):
     """Read a cache time.
-
+    
     :param f: File-like object to read from
     :return: Tuple with seconds and nanoseconds
     """
@@ -68,7 +69,7 @@ def read_cache_time(f):
 
 def write_cache_time(f, t):
     """Write a cache time.
-
+    
     :param f: File-like object to write to
     :param t: Time to write (as int, float or tuple with secs and nsecs)
     """
@@ -79,6 +80,7 @@ def write_cache_time(f, t):
         t = (int(secs), int(nsecs * 1000000000))
     elif not isinstance(t, tuple):
         raise TypeError(t)
+
     f.write(struct.pack(">LL", *t))
 
 
@@ -97,7 +99,7 @@ def read_cache_entry(f):
     # Padding:
     real_size = ((f.tell() - beginoffset + 8) & ~7)
     data = f.read((beginoffset + real_size) - f.tell())
-    return (name, ctime, mtime, dev, ino, mode, uid, gid, size,
+    return (name, ctime, mtime, dev, ino, mode, uid, gid, size, 
             sha_to_hex(sha), flags & ~0x0fff)
 
 
@@ -105,7 +107,7 @@ def write_cache_entry(f, entry):
     """Write an index entry to a file.
 
     :param f: File object
-    :param entry: Entry to write, tuple with:
+    :param entry: Entry to write, tuple with: 
         (name, ctime, mtime, dev, ino, mode, uid, gid, size, sha, flags)
     """
     beginoffset = f.tell()
@@ -116,13 +118,13 @@ def write_cache_entry(f, entry):
     f.write(struct.pack(">LLLLLL20sH", dev, ino, mode, uid, gid, size, hex_to_sha(sha), flags))
     f.write(name)
     real_size = ((f.tell() - beginoffset + 8) & ~7)
-    f.write("\0" * ((beginoffset + real_size) - f.tell()))
+    f.write(b"\0" * ((beginoffset + real_size) - f.tell()))
 
 
 def read_index(f):
     """Read an index file, yielding the individual entries."""
     header = f.read(4)
-    if header != "DIRC":
+    if header != b"DIRC":
         raise AssertionError("Invalid index file header: %r" % header)
     (version, num_entries) = struct.unpack(">LL", f.read(4 * 2))
     assert version in (1, 2)
@@ -143,11 +145,11 @@ def read_index_dict(f):
 
 def write_index(f, entries):
     """Write an index file.
-
+    
     :param f: File-like object to write to
     :param entries: Iterable over the entries to write
     """
-    f.write("DIRC")
+    f.write(b"DIRC")
     f.write(struct.pack(">LL", 2, len(entries)))
     for x in entries:
         write_cache_entry(f, x)
@@ -167,7 +169,7 @@ def cleanup_mode(mode):
     """Cleanup a mode value.
 
     This will return a mode that can be stored in a tree object.
-
+    
     :param mode: Mode to clean up.
     """
     if stat.S_ISLNK(mode):
@@ -176,8 +178,8 @@ def cleanup_mode(mode):
         return stat.S_IFDIR
     elif S_ISGITLINK(mode):
         return S_IFGITLINK
-    ret = stat.S_IFREG | 0644
-    ret |= (mode & 0111)
+    ret = stat.S_IFREG | 0o644
+    ret |= (mode & 0o111)
     return ret
 
 
@@ -186,7 +188,7 @@ class Index(object):
 
     def __init__(self, filename):
         """Open an index file.
-
+        
         :param filename: Path to the index file
         """
         self._filename = filename
@@ -198,27 +200,20 @@ class Index(object):
 
     def write(self):
         """Write current contents of index to disk."""
-        f = GitFile(self._filename, 'wb')
-        try:
-            f = SHA1Writer(f)
+        with SHA1Writer(GitFile(self._filename, 'wb')) as f:
             write_index_dict(f, self._byname)
-        finally:
-            f.close()
 
     def read(self):
         """Read current contents of index from disk."""
         if not os.path.exists(self._filename):
             return
-        f = GitFile(self._filename, 'rb')
-        try:
-            f = SHA1Reader(f)
+
+        with SHA1Reader(GitFile(self._filename, 'rb')) as f:
             for x in read_index(f):
                 self[x[0]] = tuple(x[1:])
             # FIXME: Additional data?
             f.read(os.path.getsize(self._filename)-f.tell()-20)
             f.check_sha()
-        finally:
-            f.close()
 
     def __len__(self):
         """Number of entries in this index file."""
@@ -226,7 +221,7 @@ class Index(object):
 
     def __getitem__(self, name):
         """Retrieve entry by relative path.
-
+        
         :return: tuple with (ctime, mtime, dev, ino, mode, uid, gid, size, sha, flags)
         """
         return self._byname[name]
@@ -236,7 +231,7 @@ class Index(object):
         return iter(self._byname)
 
     def get_sha1(self, path):
-        """Return the (git object) SHA1 for the object at a path."""
+        """Return the SHA1 for the object at a path."""
         return self[path][-2]
 
     def get_mode(self, path):
@@ -254,20 +249,19 @@ class Index(object):
         self._byname = {}
 
     def __setitem__(self, name, x):
-        assert isinstance(name, str)
         assert len(x) == 10
         # Remove the old entry if any
         self._byname[name] = x
 
     def __delitem__(self, name):
-        assert isinstance(name, str)
+        assert type(name) == bytes
         del self._byname[name]
 
     def iteritems(self):
-        return self._byname.iteritems()
+        return iter(self._byname.items())
 
     def update(self, entries):
-        for name, value in entries.iteritems():
+        for name, value in entries.items():
             self[name] = value
 
     def changes_from_tree(self, object_store, tree, want_unchanged=False):
@@ -302,15 +296,14 @@ def commit_tree(object_store, blobs):
     :param blobs: Iterable over blob path, sha, mode entries
     :return: SHA1 of the created tree.
     """
-
-    trees = {"": {}}
+    trees = {b'': {}}
 
     def add_tree(path):
         if path in trees:
             return trees[path]
         dirname, basename = pathsplit(path)
         t = add_tree(dirname)
-        assert isinstance(basename, str)
+        assert isinstance(basename, bytes)
         newtree = {}
         t[basename] = newtree
         trees[path] = newtree
@@ -323,7 +316,7 @@ def commit_tree(object_store, blobs):
 
     def build_tree(path):
         tree = Tree()
-        for basename, entry in trees[path].iteritems():
+        for basename, entry in trees[path].items():
             if type(entry) == dict:
                 mode = stat.S_IFDIR
                 sha = build_tree(pathjoin(path, basename))
@@ -332,7 +325,7 @@ def commit_tree(object_store, blobs):
             tree.add(basename, mode, sha)
         object_store.add_object(tree)
         return tree.id
-    return build_tree("")
+    return build_tree(b'')
 
 
 def commit_index(object_store, index):
@@ -389,44 +382,3 @@ def index_entry_from_stat(stat_val, hex_sha, flags, mode=None):
     return (stat_val.st_ctime, stat_val.st_mtime, stat_val.st_dev,
             stat_val.st_ino, mode, stat_val.st_uid,
             stat_val.st_gid, stat_val.st_size, hex_sha, flags)
-
-
-def build_index_from_tree(prefix, index_path, object_store, tree_id):
-    """Generate and materialize index from a tree
-
-    :param tree_id: Tree to materialize
-    :param prefix: Target dir for materialized index files
-    :param index_path: Target path for generated index
-    :param object_store: Non-empty object store holding tree contents
-
-    :note:: existing index is wiped and contents are not merged
-        in a working dir. Suiteable only for fresh clones.
-    """
-
-    index = Index(index_path)
-
-    for entry in object_store.iter_tree_contents(tree_id):
-        full_path = os.path.join(prefix, entry.path)
-
-        if not os.path.exists(os.path.dirname(full_path)):
-            os.makedirs(os.path.dirname(full_path))
-
-        # FIXME: Merge new index into working tree
-        if stat.S_ISLNK(entry.mode):
-            # FIXME: This will fail on Windows. What should we do instead?
-            os.symlink(object_store[entry.sha].as_raw_string(), full_path)
-        else:
-            f = open(full_path, 'wb')
-            try:
-                # Write out file
-                f.write(object_store[entry.sha].as_raw_string())
-            finally:
-                f.close()
-
-            os.chmod(full_path, entry.mode)
-
-        # Add file to index
-        st = os.lstat(full_path)
-        index[entry.path] = index_entry_from_stat(st, entry.sha, 0)
-
-    index.write()

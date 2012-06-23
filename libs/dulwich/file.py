@@ -26,7 +26,7 @@ def ensure_dir_exists(dirname):
     """Ensure a directory exists, creating if necessary."""
     try:
         os.makedirs(dirname)
-    except OSError, e:
+    except OSError as e:
         if e.errno != errno.EEXIST:
             raise
 
@@ -36,7 +36,7 @@ def fancy_rename(oldname, newname):
     if not os.path.exists(newname):
         try:
             os.rename(oldname, newname)
-        except OSError, e:
+        except OSError as e:
             raise
         return
 
@@ -45,17 +45,17 @@ def fancy_rename(oldname, newname):
         (fd, tmpfile) = tempfile.mkstemp(".tmp", prefix=oldname+".", dir=".")
         os.close(fd)
         os.remove(tmpfile)
-    except OSError, e:
+    except OSError as e:
         # either file could not be created (e.g. permission problem)
         # or could not be deleted (e.g. rude virus scanner)
         raise
     try:
         os.rename(newname, tmpfile)
-    except OSError, e:
+    except OSError as e:
         raise   # no rename occurred
     try:
         os.rename(oldname, newname)
-    except OSError, e:
+    except OSError as e:
         os.rename(tmpfile, newname)
         raise
     os.remove(tmpfile)
@@ -82,7 +82,7 @@ def GitFile(filename, mode='rb', bufsize=-1):
     if 'w' in mode:
         return _GitFile(filename, mode, bufsize)
     else:
-        return file(filename, mode, bufsize)
+        return open(filename, mode, bufsize)
 
 
 class _GitFile(object):
@@ -98,8 +98,8 @@ class _GitFile(object):
 
     PROXY_PROPERTIES = set(['closed', 'encoding', 'errors', 'mode', 'name',
                             'newlines', 'softspace'])
-    PROXY_METHODS = ('__iter__', 'flush', 'fileno', 'isatty', 'next', 'read',
-                     'readline', 'readlines', 'xreadlines', 'seek', 'tell',
+    PROXY_METHODS = ('__iter__', 'flush', 'fileno', 'isatty', '__next__', 'read',
+                     'readline', 'readlines', 'seek', 'tell',
                      'truncate', 'write', 'writelines')
     def __init__(self, filename, mode, bufsize):
         self._filename = filename
@@ -112,6 +112,12 @@ class _GitFile(object):
         for method in self.PROXY_METHODS:
             setattr(self, method, getattr(self._file, method))
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
     def abort(self):
         """Close and discard the lockfile without overwriting the target.
 
@@ -123,7 +129,7 @@ class _GitFile(object):
         try:
             os.remove(self._lockfilename)
             self._closed = True
-        except OSError, e:
+        except OSError as e:
             # The file may have been removed already, which is ok.
             if e.errno != errno.ENOENT:
                 raise
@@ -146,7 +152,7 @@ class _GitFile(object):
         try:
             try:
                 os.rename(self._lockfilename, self._filename)
-            except OSError, e:
+            except OSError as e:
                 # Windows versions prior to Vista don't support atomic renames
                 if e.errno != errno.EEXIST:
                     raise

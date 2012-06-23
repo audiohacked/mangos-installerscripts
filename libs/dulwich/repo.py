@@ -22,14 +22,15 @@
 """Repository access.
 
 This module contains the base class for git repositories
-(BaseRepo) and an implementation which uses a repository on
+(BaseRepo) and an implementation which uses a repository on 
 local disk (Repo).
 
 """
 
-from cStringIO import StringIO
+from io import BytesIO
 import errno
 import os
+import sys
 
 from dulwich.errors import (
     NoIndexPresent,
@@ -41,6 +42,7 @@ from dulwich.errors import (
     PackedRefsException,
     CommitError,
     RefFormatError,
+    ObjectFormatException,
     )
 from dulwich.file import (
     ensure_dir_exists,
@@ -58,11 +60,9 @@ from dulwich.objects import (
     Tree,
     hex_to_sha,
     )
-import warnings
-
 
 OBJECTDIR = 'objects'
-SYMREF = 'ref: '
+SYMREF = b'ref: '
 REFSDIR = 'refs'
 REFSDIR_TAGS = 'tags'
 REFSDIR_HEADS = 'heads'
@@ -85,7 +85,6 @@ def read_info_refs(f):
         ret[name] = sha
     return ret
 
-
 def check_ref_format(refname):
     """Check if a refname is correctly formatted.
 
@@ -98,34 +97,28 @@ def check_ref_format(refname):
     """
     # These could be combined into one big expression, but are listed separately
     # to parallel [1].
-    if '/.' in refname or refname.startswith('.'):
+    if b'/.' in refname or refname.startswith(b'.'):
         return False
-    if '/' not in refname:
+    if b'/' not in refname:
         return False
-    if '..' in refname:
+    if b'..' in refname:
         return False
     for c in refname:
-        if ord(c) < 040 or c in '\177 ~^:?*[':
+        if c < 0o40 or c in b'\177 ~^:?*[':
             return False
-    if refname[-1] in '/.':
+    if refname[-1] in b'/.':
         return False
-    if refname.endswith('.lock'):
+    if refname.endswith(b'.lock'):
         return False
-    if '@{' in refname:
+    if b'@{' in refname:
         return False
-    if '\\' in refname:
+    if b'\\' in refname:
         return False
     return True
 
 
 class RefsContainer(object):
     """A container for refs."""
-
-    def set_ref(self, name, other):
-        warnings.warn("RefsContainer.set_ref() is deprecated."
-            "Use set_symblic_ref instead.",
-            category=DeprecationWarning, stacklevel=2)
-        return self.set_symbolic_ref(name, other)
 
     def set_symbolic_ref(self, name, other):
         """Make a ref point at another ref.
@@ -156,8 +149,8 @@ class RefsContainer(object):
         return None
 
     def import_refs(self, base, other):
-        for name, value in other.iteritems():
-            self["%s/%s" % (base, name)] = value
+        for name, value in other.items():
+            self[base + b'/' + name] = value
 
     def allkeys(self):
         """All refs present in this container."""
@@ -196,12 +189,12 @@ class RefsContainer(object):
         ret = {}
         keys = self.keys(base)
         if base is None:
-            base = ""
+            base = b""
         for key in keys:
             try:
-                ret[key] = self[("%s/%s" % (base, key)).strip("/")]
+                ret[key] = self[(base + b'/' + key).strip(b'/')]
             except KeyError:
-                continue  # Unable to resolve
+                continue # Unable to resolve
 
         return ret
 
@@ -216,9 +209,9 @@ class RefsContainer(object):
         :param name: The name of the reference.
         :raises KeyError: if a refname is not HEAD or is otherwise not valid.
         """
-        if name in ('HEAD', 'refs/stash'):
+        if name in (b'HEAD', b'refs/stash'):
             return
-        if not name.startswith('refs/') or not check_ref_format(name[5:]):
+        if not name.startswith(b'refs/') or not check_ref_format(name[5:]):
             raise RefFormatError(name)
 
     def read_ref(self, refname):
@@ -248,7 +241,9 @@ class RefsContainer(object):
         :return: a tuple of (refname, sha), where refname is the name of the
             last reference in the symbolic reference chain
         """
+
         contents = SYMREF + name
+
         depth = 0
         while contents.startswith(SYMREF):
             refname = contents[len(SYMREF):]
@@ -349,7 +344,7 @@ class DictRefsContainer(RefsContainer):
         self._peeled = {}
 
     def allkeys(self):
-        return self._refs.keys()
+        return list(self._refs.keys())
 
     def read_loose_ref(self, name):
         return self._refs.get(name, None)
@@ -401,8 +396,8 @@ class InfoRefsContainer(RefsContainer):
         self._refs = {}
         self._peeled = {}
         for l in f.readlines():
-            sha, name = l.rstrip("\n").split("\t")
-            if name.endswith("^{}"):
+            sha, name = l.rstrip(b"\n").split(b"\t")
+            if name.endswith(b"^{}"):
                 name = name[:-3]
                 if not check_ref_format(name):
                     raise ValueError("invalid ref name '%s'" % name)
@@ -431,8 +426,9 @@ class InfoRefsContainer(RefsContainer):
 class DiskRefsContainer(RefsContainer):
     """Refs container that reads refs from disk."""
 
-    def __init__(self, path):
+    def __init__(self, path, fsenc=None):
         self.path = path
+        self._fsenc = fsenc
         self._packed_refs = None
         self._peeled_refs = None
 
@@ -448,22 +444,22 @@ class DiskRefsContainer(RefsContainer):
                 refname = ("%s/%s" % (dir, filename)).strip("/")
                 # check_ref_format requires at least one /, so we prepend the
                 # base before calling it.
-                if check_ref_format("%s/%s" % (base, refname)):
-                    keys.add(refname)
+                if check_ref_format(base + b'/' + refname.encode(self._fsenc)):
+                    keys.add(refname.encode(self._fsenc))
         for key in self.get_packed_refs():
             if key.startswith(base):
-                keys.add(key[len(base):].strip("/"))
+                keys.add(key[len(base):].strip(b'/'))
         return keys
 
     def allkeys(self):
         keys = set()
-        if os.path.exists(self.refpath("HEAD")):
-            keys.add("HEAD")
-        path = self.refpath("")
-        for root, dirs, files in os.walk(self.refpath("refs")):
+        if os.path.exists(self.refpath(b"HEAD")):
+            keys.add(b"HEAD")
+        path = self.refpath(b"")
+        for root, dirs, files in os.walk(self.refpath(b"refs")):
             dir = root[len(path):].strip(os.path.sep).replace(os.path.sep, "/")
             for filename in files:
-                refname = ("%s/%s" % (dir, filename)).strip("/")
+                refname = ("%s/%s" % (dir, filename)).strip("/").encode(self._fsenc)
                 if check_ref_format(refname):
                     keys.add(refname)
         keys.update(self.get_packed_refs())
@@ -473,6 +469,7 @@ class DiskRefsContainer(RefsContainer):
         """Return the disk path of a ref.
 
         """
+        name = name.decode(self._fsenc)
         if os.path.sep != "/":
             name = name.replace("/", os.path.sep)
         return os.path.join(self.path, name)
@@ -493,25 +490,23 @@ class DiskRefsContainer(RefsContainer):
             self._peeled_refs = {}
             path = os.path.join(self.path, 'packed-refs')
             try:
-                f = GitFile(path, 'rb')
-            except IOError, e:
+                with GitFile(path, 'rb') as f:
+                    first_line = iter(f).__next__().rstrip()
+                    if (first_line.startswith(b"# pack-refs") and b" peeled" in
+                            first_line):
+                        for sha, name, peeled in read_packed_refs_with_peeled(f):
+                            self._packed_refs[name] = sha
+                            if peeled:
+                                self._peeled_refs[name] = peeled
+                    else:
+                        f.seek(0)
+                        for sha, name in read_packed_refs(f):
+                            self._packed_refs[name] = sha
+            except IOError as e:
                 if e.errno == errno.ENOENT:
                     return {}
                 raise
-            try:
-                first_line = iter(f).next().rstrip()
-                if (first_line.startswith("# pack-refs") and " peeled" in
-                        first_line):
-                    for sha, name, peeled in read_packed_refs_with_peeled(f):
-                        self._packed_refs[name] = sha
-                        if peeled:
-                            self._peeled_refs[name] = peeled
-                else:
-                    f.seek(0)
-                    for sha, name in read_packed_refs(f):
-                        self._packed_refs[name] = sha
-            finally:
-                f.close()
+
         return self._packed_refs
 
     def get_peeled(self, name):
@@ -545,18 +540,15 @@ class DiskRefsContainer(RefsContainer):
         """
         filename = self.refpath(name)
         try:
-            f = GitFile(filename, 'rb')
-            try:
+            with GitFile(filename, 'rb') as f:
                 header = f.read(len(SYMREF))
                 if header == SYMREF:
                     # Read only the first line
-                    return header + iter(f).next().rstrip("\r\n")
+                    return header + iter(f).__next__().rstrip(b"\r\n")
                 else:
                     # Read only the first 40 bytes
-                    return header + f.read(40 - len(SYMREF))
-            finally:
-                f.close()
-        except IOError, e:
+                    return header + f.read(40-len(SYMREF))
+        except IOError as e:
             if e.errno == errno.ENOENT:
                 return None
             raise
@@ -566,8 +558,7 @@ class DiskRefsContainer(RefsContainer):
             return
         filename = os.path.join(self.path, 'packed-refs')
         # reread cached refs from disk, while holding the lock
-        f = GitFile(filename, 'wb')
-        try:
+        with GitFile(filename, 'wb') as f:
             self._packed_refs = None
             self.get_packed_refs()
 
@@ -578,8 +569,6 @@ class DiskRefsContainer(RefsContainer):
             if name in self._peeled_refs:
                 del self._peeled_refs[name]
             write_packed_refs(f, self._packed_refs, self._peeled_refs)
-            f.close()
-        finally:
             f.abort()
 
     def set_symbolic_ref(self, name, other):
@@ -591,15 +580,12 @@ class DiskRefsContainer(RefsContainer):
         self._check_refname(name)
         self._check_refname(other)
         filename = self.refpath(name)
-        try:
-            f = GitFile(filename, 'wb')
+        with GitFile(filename, 'wb') as f:
             try:
-                f.write(SYMREF + other + '\n')
+                f.write(SYMREF + other + b'\n')
             except (IOError, OSError):
                 f.abort()
                 raise
-        finally:
-            f.close()
 
     def set_if_equals(self, name, old_ref, new_ref):
         """Set a refname to new_ref only if it currently equals old_ref.
@@ -620,8 +606,7 @@ class DiskRefsContainer(RefsContainer):
             realname = name
         filename = self.refpath(realname)
         ensure_dir_exists(os.path.dirname(filename))
-        f = GitFile(filename, 'wb')
-        try:
+        with GitFile(filename, 'wb') as f:
             if old_ref is not None:
                 try:
                     # read again while holding the lock
@@ -635,12 +620,10 @@ class DiskRefsContainer(RefsContainer):
                     f.abort()
                     raise
             try:
-                f.write(new_ref + "\n")
+                f.write(new_ref + b"\n")
             except (OSError, IOError):
                 f.abort()
                 raise
-        finally:
-            f.close()
         return True
 
     def add_if_new(self, name, ref):
@@ -653,6 +636,7 @@ class DiskRefsContainer(RefsContainer):
         :param ref: The new sha the refname will refer to.
         :return: True if the add was successful, False otherwise.
         """
+
         try:
             realname, contents = self._follow(name)
             if contents is not None:
@@ -662,18 +646,15 @@ class DiskRefsContainer(RefsContainer):
         self._check_refname(realname)
         filename = self.refpath(realname)
         ensure_dir_exists(os.path.dirname(filename))
-        f = GitFile(filename, 'wb')
-        try:
+        with GitFile(filename, 'wb') as f:
             if os.path.exists(filename) or name in self.get_packed_refs():
                 f.abort()
                 return False
             try:
-                f.write(ref + "\n")
+                f.write(ref + b'\n')
             except (OSError, IOError):
                 f.abort()
                 raise
-        finally:
-            f.close()
         return True
 
     def remove_if_equals(self, name, old_ref):
@@ -701,7 +682,7 @@ class DiskRefsContainer(RefsContainer):
             # may only be packed
             try:
                 os.remove(filename)
-            except OSError, e:
+            except OSError as e:
                 if e.errno != errno.ENOENT:
                     raise
             self._remove_packed_ref(name)
@@ -713,16 +694,16 @@ class DiskRefsContainer(RefsContainer):
 
 def _split_ref_line(line):
     """Split a single ref line into a tuple of SHA1 and name."""
-    fields = line.rstrip("\n").split(" ")
+    fields = line.rstrip(b"\n").split(b" ")
     if len(fields) != 2:
-        raise PackedRefsException("invalid ref line '%s'" % line)
+        raise PackedRefsException("invalid ref line %r" % line)
     sha, name = fields
     try:
         hex_to_sha(sha)
-    except (AssertionError, TypeError), e:
+    except (AssertionError, TypeError, ObjectFormatException) as e:
         raise PackedRefsException(e)
     if not check_ref_format(name):
-        raise PackedRefsException("invalid ref name '%s'" % name)
+        raise PackedRefsException("invalid ref name %r" % name)
     return (sha, name)
 
 
@@ -733,10 +714,10 @@ def read_packed_refs(f):
     :return: Iterator over tuples with SHA1s and ref names.
     """
     for l in f:
-        if l[0] == "#":
+        if l[0] == b"#"[0]:
             # Comment
             continue
-        if l[0] == "^":
+        if l[0] == b"^"[0]:
             raise PackedRefsException(
               "found peeled ref in packed-refs without peeled")
         yield _split_ref_line(l)
@@ -752,15 +733,15 @@ def read_packed_refs_with_peeled(f):
     """
     last = None
     for l in f:
-        if l[0] == "#":
+        if l[0] == b"#"[0]:
             continue
-        l = l.rstrip("\r\n")
-        if l[0] == "^":
+        l = l.rstrip(b"\r\n")
+        if l[0] == b"^"[0]:
             if not last:
                 raise PackedRefsException("unexpected peeled ref line")
             try:
                 hex_to_sha(l[1:])
-            except (AssertionError, TypeError), e:
+            except (AssertionError, TypeError, ObjectFormatException) as e:
                 raise PackedRefsException(e)
             sha, name = _split_ref_line(last)
             last = None
@@ -785,11 +766,11 @@ def write_packed_refs(f, packed_refs, peeled_refs=None):
     if peeled_refs is None:
         peeled_refs = {}
     else:
-        f.write('# pack-refs with: peeled\n')
-    for refname in sorted(packed_refs.iterkeys()):
-        f.write('%s %s\n' % (packed_refs[refname], refname))
+        f.write(b'# pack-refs with: peeled\n')
+    for refname in sorted(packed_refs.keys()):
+        f.write(packed_refs[refname] + b' ' + refname + b'\n')
         if refname in peeled_refs:
-            f.write('^%s\n' % peeled_refs[refname])
+            f.write(b'^' + peeled_refs[refname] + b'\n')
 
 
 class BaseRepo(object):
@@ -813,19 +794,29 @@ class BaseRepo(object):
         self.object_store = object_store
         self.refs = refs
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
+    def close(self):
+        if getattr(self.object_store, 'close', None) is not None:
+            self.object_store.close()
+
     def _init_files(self, bare):
         """Initialize a default set of named files."""
         from dulwich.config import ConfigFile
-        self._put_named_file('description', "Unnamed repository")
-        f = StringIO()
+        self._put_named_file('description', b"Unnamed repository")
+        f = BytesIO()
         cf = ConfigFile()
-        cf.set("core", "repositoryformatversion", "0")
-        cf.set("core", "filemode", "true")
-        cf.set("core", "bare", str(bare).lower())
-        cf.set("core", "logallrefupdates", "true")
+        cf.set(b"core", b"repositoryformatversion", b"0")
+        cf.set(b"core", b"filemode", b"true")
+        cf.set(b"core", b"bare", str(bare).lower().encode('ascii'))
+        cf.set(b"core", b"logallrefupdates", b"true")
         cf.write_to_file(f)
         self._put_named_file('config', f.getvalue())
-        self._put_named_file(os.path.join('info', 'exclude'), '')
+        self._put_named_file(os.path.join('info', 'exclude'), b'')
 
     def get_named_file(self, path):
         """Get a file from the control dir with a specific name.
@@ -864,7 +855,7 @@ class BaseRepo(object):
         :param progress: Optional progress function
         """
         if determine_wants is None:
-            determine_wants = lambda heads: heads.values()
+            determine_wants = lambda heads: list(heads.values())
         target.object_store.add_objects(
           self.fetch_objects(determine_wants, target.get_graph_walker(),
                              progress))
@@ -905,7 +896,7 @@ class BaseRepo(object):
         :return: A graph walker object
         """
         if heads is None:
-            heads = self.refs.as_dict('refs/heads').values()
+            heads = list(self.refs.as_dict(b'refs/heads').values())
         return self.object_store.get_graph_walker(heads)
 
     def ref(self, name):
@@ -926,10 +917,9 @@ class BaseRepo(object):
 
     def head(self):
         """Return the SHA1 pointed at by HEAD."""
-        return self.refs['HEAD']
+        return self.refs[b'HEAD']
 
     def _get_object(self, sha, cls):
-        assert len(sha) in (20, 40)
         ret = self.get_object(sha)
         if not isinstance(ret, cls):
             if cls is Commit:
@@ -971,7 +961,7 @@ class BaseRepo(object):
         path = os.path.join(self._controldir, 'config')
         try:
             return ConfigFile.from_path(path)
-        except (IOError, OSError), e:
+        except (IOError, OSError) as e:
             if e.errno != errno.ENOENT:
                 raise
             ret = ConfigFile()
@@ -990,54 +980,6 @@ class BaseRepo(object):
         from dulwich.config import StackedConfig
         backends = [self.get_config()] + StackedConfig.default_backends()
         return StackedConfig(backends, writable=backends[0])
-
-    def commit(self, sha):
-        """Retrieve the commit with a particular SHA.
-
-        :param sha: SHA of the commit to retrieve
-        :raise NotCommitError: If the SHA provided doesn't point at a Commit
-        :raise KeyError: If the SHA provided didn't exist
-        :return: A `Commit` object
-        """
-        warnings.warn("Repo.commit(sha) is deprecated. Use Repo[sha] instead.",
-            category=DeprecationWarning, stacklevel=2)
-        return self._get_object(sha, Commit)
-
-    def tree(self, sha):
-        """Retrieve the tree with a particular SHA.
-
-        :param sha: SHA of the tree to retrieve
-        :raise NotTreeError: If the SHA provided doesn't point at a Tree
-        :raise KeyError: If the SHA provided didn't exist
-        :return: A `Tree` object
-        """
-        warnings.warn("Repo.tree(sha) is deprecated. Use Repo[sha] instead.",
-            category=DeprecationWarning, stacklevel=2)
-        return self._get_object(sha, Tree)
-
-    def tag(self, sha):
-        """Retrieve the tag with a particular SHA.
-
-        :param sha: SHA of the tag to retrieve
-        :raise NotTagError: If the SHA provided doesn't point at a Tag
-        :raise KeyError: If the SHA provided didn't exist
-        :return: A `Tag` object
-        """
-        warnings.warn("Repo.tag(sha) is deprecated. Use Repo[sha] instead.",
-            category=DeprecationWarning, stacklevel=2)
-        return self._get_object(sha, Tag)
-
-    def get_blob(self, sha):
-        """Retrieve the blob with a particular SHA.
-
-        :param sha: SHA of the blob to retrieve
-        :raise NotBlobError: If the SHA provided doesn't point at a Blob
-        :raise KeyError: If the SHA provided didn't exist
-        :return: A `Blob` object
-        """
-        warnings.warn("Repo.get_blob(sha) is deprecated. Use Repo[sha] "
-            "instead.", category=DeprecationWarning, stacklevel=2)
-        return self._get_object(sha, Blob)
 
     def get_peeled(self, ref):
         """Get the peeled value of a ref.
@@ -1082,20 +1024,6 @@ class BaseRepo(object):
             include = [self.head()]
         return Walker(self.object_store, include, *args, **kwargs)
 
-    def revision_history(self, head):
-        """Returns a list of the commits reachable from head.
-
-        :param head: The SHA of the head to list revision history for.
-        :return: A list of commit objects reachable from head, starting with
-            head itself, in descending commit time order.
-        :raise MissingCommitError: if any missing commits are referenced,
-            including if the head parameter isn't the SHA of a commit.
-        """
-        warnings.warn("Repo.revision_history() is deprecated."
-            "Use dulwich.walker.Walker(repo) instead.",
-            category=DeprecationWarning, stacklevel=2)
-        return [e.commit for e in self.get_walker(include=[head])]
-
     def __getitem__(self, name):
         """Retrieve a Git object by SHA1 or ref.
 
@@ -1129,13 +1057,14 @@ class BaseRepo(object):
         :param name: ref name
         :param value: Ref value - either a ShaFile object, or a hex sha
         """
-        if name.startswith("refs/") or name == "HEAD":
+        if name.startswith(b"refs/") or name == b"HEAD":
             if isinstance(value, ShaFile):
                 self.refs[name] = value.id
-            elif isinstance(value, str):
+            elif isinstance(value, bytes):
                 self.refs[name] = value
             else:
                 raise TypeError(value)
+
         else:
             raise ValueError(name)
 
@@ -1144,7 +1073,7 @@ class BaseRepo(object):
 
         :param name: Name of the ref to remove
         """
-        if name.startswith("refs/") or name == "HEAD":
+        if name.startswith(b"refs") or name == b"HEAD":
             del self.refs[name]
         else:
             raise ValueError(name)
@@ -1153,15 +1082,15 @@ class BaseRepo(object):
         """Determine the identity to use for new commits.
         """
         config = self.get_config_stack()
-        return "%s <%s>" % (
-            config.get(("user", ), "name"),
-            config.get(("user", ), "email"))
+        return (
+            config.get((b"user", ), b"name") + b" <" +
+            config.get((b"user", ), b"email") + b">")
 
     def do_commit(self, message=None, committer=None,
                   author=None, commit_timestamp=None,
                   commit_timezone=None, author_timestamp=None,
                   author_timezone=None, tree=None, encoding=None,
-                  ref='HEAD', merge_heads=None):
+                  ref=b'HEAD', merge_heads=None):
         """Create a new commit.
 
         :param message: Commit message
@@ -1242,7 +1171,11 @@ class Repo(BaseRepo):
     To create a new repository, use the Repo.init class method.
     """
 
-    def __init__(self, root):
+    def __init__(self, root, fsenc=None):
+        if fsenc is None:
+            self._fsenc = sys.getfilesystemencoding()
+        else:
+            self._fsenc = fsenc
         if os.path.isdir(os.path.join(root, ".git", OBJECTDIR)):
             self.bare = False
             self._controldir = os.path.join(root, ".git")
@@ -1255,7 +1188,7 @@ class Repo(BaseRepo):
         self.path = root
         object_store = DiskObjectStore(os.path.join(self.controldir(),
                                                     OBJECTDIR))
-        refs = DiskRefsContainer(self.controldir())
+        refs = DiskRefsContainer(self.controldir(), fsenc=self._fsenc)
         BaseRepo.__init__(self, object_store, refs)
 
     def controldir(self):
@@ -1269,11 +1202,8 @@ class Repo(BaseRepo):
         :param contents: A string to write to the file.
         """
         path = path.lstrip(os.path.sep)
-        f = GitFile(os.path.join(self.controldir(), path), 'wb')
-        try:
+        with GitFile(os.path.join(self.controldir(), path), 'wb') as f:
             f.write(contents)
-        finally:
-            f.close()
 
     def get_named_file(self, path):
         """Get a file from the control dir with a specific name.
@@ -1285,12 +1215,13 @@ class Repo(BaseRepo):
         :param path: The path to the file, relative to the control dir.
         :return: An open file object, or None if the file does not exist.
         """
+        assert type(path) == str
         # TODO(dborowitz): sanitize filenames, since this is used directly by
         # the dumb web serving code.
         path = path.lstrip(os.path.sep)
         try:
             return open(os.path.join(self.controldir(), path), 'rb')
-        except (IOError, OSError), e:
+        except (IOError, OSError) as e:
             if e.errno == errno.ENOENT:
                 return None
             raise
@@ -1321,7 +1252,7 @@ class Repo(BaseRepo):
 
         :param paths: List of paths, relative to the repository path
         """
-        if isinstance(paths, basestring):
+        if not isinstance(paths, list):
             paths = [paths]
         from dulwich.index import index_entry_from_stat
         index = self.open_index()
@@ -1332,22 +1263,19 @@ class Repo(BaseRepo):
             except OSError:
                 # File no longer exists
                 try:
-                    del index[path]
+                    del index[path.encode(sys.getfilesystemencoding())]
                 except KeyError:
-                    pass  # already removed
+                    pass # already removed
             else:
                 blob = Blob()
-                f = open(full_path, 'rb')
-                try:
+                with open(full_path, 'rb') as f:
                     blob.data = f.read()
-                finally:
-                    f.close()
                 self.object_store.add_object(blob)
-                index[path] = index_entry_from_stat(st, blob.id, 0)
+                index[path.encode(sys.getfilesystemencoding())] = index_entry_from_stat(
+                    st, blob.id, 0)
         index.write()
 
-    def clone(self, target_path, mkdir=True, bare=False,
-            origin="origin"):
+    def clone(self, target_path, mkdir=True, bare=False, origin=b'origin'):
         """Clone this repository.
 
         :param target_path: Target path
@@ -1363,27 +1291,15 @@ class Repo(BaseRepo):
             target = self.init_bare(target_path)
         self.fetch(target)
         target.refs.import_refs(
-            'refs/remotes/' + origin, self.refs.as_dict('refs/heads'))
+            b'refs/remotes/'+origin, self.refs.as_dict(b'refs/heads'))
         target.refs.import_refs(
-            'refs/tags', self.refs.as_dict('refs/tags'))
+            b'refs/tags', self.refs.as_dict(b'refs/tags'))
         try:
             target.refs.add_if_new(
-                'refs/heads/master',
-                self.refs['refs/heads/master'])
+                b'refs/heads/master',
+                self.refs[b'refs/heads/master'])
         except KeyError:
             pass
-
-        # Update target head
-        head, head_sha = self.refs._follow('HEAD')
-        target.refs.set_symbolic_ref('HEAD', head)
-        target['HEAD'] = head_sha
-
-        if not bare:
-            # Checkout HEAD to target dir
-            from dulwich.index import build_index_from_tree
-            build_index_from_tree(target.path, target.index_path(),
-                    target.object_store, target['HEAD'].tree)
-
         return target
 
     def __repr__(self):
@@ -1395,7 +1311,7 @@ class Repo(BaseRepo):
             os.mkdir(os.path.join(path, *d))
         DiskObjectStore.init(os.path.join(path, OBJECTDIR))
         ret = cls(path)
-        ret.refs.set_symbolic_ref("HEAD", "refs/heads/master")
+        ret.refs.set_symbolic_ref(b"HEAD", b"refs/heads/master")
         ret._init_files(bare)
         return ret
 
@@ -1461,7 +1377,7 @@ class MemoryRepo(BaseRepo):
         contents = self._named_files.get(path, None)
         if contents is None:
             return None
-        return StringIO(contents)
+        return BytesIO(contents)
 
     def open_index(self):
         """Fail to open index for this repo, since it is bare.
@@ -1482,7 +1398,7 @@ class MemoryRepo(BaseRepo):
         ret = cls()
         for obj in objects:
             ret.object_store.add_object(obj)
-        for refname, sha in refs.iteritems():
+        for refname, sha in refs.items():
             ret.refs[refname] = sha
         ret._init_files(bare=True)
         return ret

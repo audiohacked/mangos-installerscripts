@@ -43,7 +43,7 @@ Known capabilities that are not supported:
 import collections
 import os
 import socket
-import SocketServer
+import socketserver
 import sys
 import zlib
 
@@ -56,9 +56,7 @@ from dulwich.errors import (
     ObjectFormatException,
     )
 from dulwich import log_utils
-from dulwich.objects import (
-    hex_to_sha,
-    )
+from dulwich.objects import hex_to_sha
 from dulwich.pack import (
     write_pack_objects,
     )
@@ -79,7 +77,6 @@ from dulwich.protocol import (
 from dulwich.repo import (
     Repo,
     )
-
 
 logger = log_utils.getLogger(__name__)
 
@@ -149,16 +146,42 @@ class DictBackend(Backend):
         try:
             return self.repos[path]
         except KeyError:
-            raise NotGitRepository("No git repository was found at %(path)s",
-                path=path)
+            raise NotGitRepository("No git repository was found at %s",
+                path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
+    def close(self):
+        for repo in self.repos.values():
+            repo.close()
 
 
 class FileSystemBackend(Backend):
     """Simple backend that looks up Git repositories in the local file system."""
 
+    def __init__(self):
+        self._known_repos = []
+
     def open_repository(self, path):
+        path = path.decode(sys.getfilesystemencoding())
         logger.debug('opening repository at %s', path)
-        return Repo(path)
+        repo = Repo(path)
+        self._known_repos.append(repo)
+        return repo
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
+    def close(self):
+        for repo in self._known_repos:
+            repo.close()
 
 
 class Handler(object):
@@ -170,9 +193,15 @@ class Handler(object):
         self.http_req = http_req
         self._client_capabilities = None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
     @classmethod
     def capability_line(cls):
-        return " ".join(cls.capabilities())
+        return b" ".join(cls.capabilities())
 
     @classmethod
     def capabilities(cls):
@@ -180,7 +209,7 @@ class Handler(object):
 
     @classmethod
     def innocuous_capabilities(cls):
-        return ("include-tag", "thin-pack", "no-progress", "ofs-delta")
+        return (b"include-tag", b"thin-pack", b"no-progress", b"ofs-delta")
 
     @classmethod
     def required_capabilities(cls):
@@ -193,18 +222,21 @@ class Handler(object):
         for cap in caps:
             if cap not in allowable_caps:
                 raise GitProtocolError('Client asked for capability %s that '
-                                       'was not advertised.' % cap)
+                                       'was not advertised.' % cap.decode('ascii'))
+
         for cap in self.required_capabilities():
             if cap not in caps:
                 raise GitProtocolError('Client does not support required '
-                                       'capability %s.' % cap)
+                                       'capability %s.' % cap.decode('ascii'))
+
         self._client_capabilities = set(caps)
-        logger.info('Client capabilities: %s', caps)
+        logger.info('Client capabilities: %s',
+          ', '.join(cap.decode('ascii') for cap in self._client_capabilities))
 
     def has_capability(self, cap):
         if self._client_capabilities is None:
             raise GitProtocolError('Server attempted to access capability %s '
-                                   'before asking client' % cap)
+                                   'before asking client' % cap.decode('ascii'))
         return cap in self._client_capabilities
 
 
@@ -213,22 +245,27 @@ class UploadPackHandler(Handler):
 
     def __init__(self, backend, args, proto, http_req=None,
                  advertise_refs=False):
+        assert type(args[0]) == bytes
         Handler.__init__(self, backend, proto, http_req=http_req)
         self.repo = backend.open_repository(args[0])
         self._graph_walker = None
         self.advertise_refs = advertise_refs
 
+    def close(self):
+        if getattr(self.repo, 'close', None) is not None:
+            self.repo.close()
+
     @classmethod
     def capabilities(cls):
-        return ("multi_ack_detailed", "multi_ack", "side-band-64k", "thin-pack",
-                "ofs-delta", "no-progress", "include-tag")
+        return (b"multi_ack_detailed", b"multi_ack", b"side-band-64k", b"thin-pack",
+                b"ofs-delta", b"no-progress", b"include-tag")
 
     @classmethod
     def required_capabilities(cls):
-        return ("side-band-64k", "thin-pack", "ofs-delta")
+        return (b"side-band-64k", b"thin-pack", b"ofs-delta")
 
     def progress(self, message):
-        if self.has_capability("no-progress"):
+        if self.has_capability(b"no-progress"):
             return
         self.proto.write_sideband(2, message)
 
@@ -242,7 +279,7 @@ class UploadPackHandler(Handler):
         :return: dict of peeled_sha -> tag_sha, where tag_sha is the sha of a
             tag whose peeled value is peeled_sha.
         """
-        if not self.has_capability("include-tag"):
+        if not self.has_capability(b"include-tag"):
             return {}
         if refs is None:
             refs = self.repo.get_refs()
@@ -255,7 +292,7 @@ class UploadPackHandler(Handler):
                 # TODO: fix behavior when missing
                 return {}
         tagged = {}
-        for name, sha in refs.iteritems():
+        for name, sha in refs.items():
             peeled_sha = repo.get_peeled(name)
             if peeled_sha != sha:
                 tagged[peeled_sha] = sha
@@ -274,13 +311,16 @@ class UploadPackHandler(Handler):
         # that the client still expects a 0-object pack in most cases.
         if objects_iter is None:
             return
+        objects_len = len(objects_iter)
+        if objects_len == 0:
+            return
 
         self.progress("dul-daemon says what\n")
-        self.progress("counting objects: %d, done.\n" % len(objects_iter))
+        self.progress("counting objects: %d, done.\n" % objects_len)
         write_pack_objects(ProtocolFile(None, write), objects_iter)
         self.progress("how was that, then?\n")
         # we are done
-        self.proto.write("0000")
+        self.proto.write(b"0000")
 
 
 def _split_proto_line(line, allowed):
@@ -303,19 +343,19 @@ def _split_proto_line(line, allowed):
     if not line:
         fields = [None]
     else:
-        fields = line.rstrip('\n').split(' ', 1)
+        fields = line.rstrip(b'\n').split(b' ', 1)
     command = fields[0]
     if allowed is not None and command not in allowed:
         raise UnexpectedCommandError(command)
     try:
-        if len(fields) == 1 and command in ('done', None):
+        if len(fields) == 1 and command in (b'done', None):
             return (command, None)
-        elif len(fields) == 2 and command in ('want', 'have'):
+        elif len(fields) == 2 and command in (b'want', b'have'):
             hex_to_sha(fields[1])
             return tuple(fields)
-    except (TypeError, AssertionError), e:
+    except (TypeError, AssertionError, ObjectFormatException) as e:
         raise GitProtocolError(e)
-    raise GitProtocolError('Received invalid line from client: %s' % line)
+    raise GitProtocolError('Received invalid line from client: %r' % line)
 
 
 class ProtocolGraphWalker(object):
@@ -359,17 +399,17 @@ class ProtocolGraphWalker(object):
             # The repo is empty, so short-circuit the whole process.
             self.proto.write_pkt_line(None)
             return None
-        values = set(heads.itervalues())
+        values = set(heads.values())
         if self.advertise_refs or not self.http_req:
-            for i, (ref, sha) in enumerate(sorted(heads.iteritems())):
-                line = "%s %s" % (sha, ref)
+            for i, (ref, sha) in enumerate(sorted(heads.items())):
+                line = sha + b' ' + ref
                 if not i:
-                    line = "%s\x00%s" % (line, self.handler.capability_line())
-                self.proto.write_pkt_line("%s\n" % line)
+                    line = line + b'\x00' + self.handler.capability_line()
+                self.proto.write_pkt_line(line + b'\n')
                 peeled_sha = self.get_peeled(ref)
                 if peeled_sha != sha:
-                    self.proto.write_pkt_line('%s %s^{}\n' %
-                                              (peeled_sha, ref))
+                    self.proto.write_pkt_line(peeled_sha + b' ' +
+                                              ref + b'^{}\n')
 
             # i'm done..
             self.proto.write_pkt_line(None)
@@ -381,10 +421,11 @@ class ProtocolGraphWalker(object):
         want = self.proto.read_pkt_line()
         if not want:
             return []
+
         line, caps = extract_want_line_capabilities(want)
         self.handler.set_client_capabilities(caps)
         self.set_ack_type(ack_type(caps))
-        allowed = ('want', None)
+        allowed = (b'want', None)
         command, sha = _split_proto_line(line, allowed)
 
         want_revs = []
@@ -412,11 +453,12 @@ class ProtocolGraphWalker(object):
         self._cached = True
         self._cache_index = 0
 
-    def next(self):
+    def __next__(self):
         if not self._cached:
-            if not self._impl and self.http_req:
+            #if not self._impl and self.http_req:
+            if not self._impl:
                 return None
-            return self._impl.next()
+            return next(self._impl)
         self._cache_index += 1
         if self._cache_index > len(self._cache):
             return None
@@ -431,13 +473,13 @@ class ProtocolGraphWalker(object):
         """
         return _split_proto_line(self.proto.read_pkt_line(), allowed)
 
-    def send_ack(self, sha, ack_type=''):
+    def send_ack(self, sha, ack_type=b''):
         if ack_type:
-            ack_type = ' %s' % ack_type
-        self.proto.write_pkt_line('ACK %s%s\n' % (sha, ack_type))
+            ack_type = b' ' + ack_type
+        self.proto.write_pkt_line(b'ACK ' + sha + ack_type + b'\n')
 
     def send_nak(self):
-        self.proto.write_pkt_line('NAK\n')
+        self.proto.write_pkt_line(b'NAK\n')
 
     def set_wants(self, wants):
         self._wants = wants
@@ -454,13 +496,14 @@ class ProtocolGraphWalker(object):
             terminated, presumably because we're searching too far down the
             wrong branch.
         """
+
         o = self.store[want]
         pending = collections.deque([o])
         while pending:
             commit = pending.popleft()
             if commit.id in haves:
                 return True
-            if commit.type_name != "commit":
+            if commit.type_name != b'commit':
                 # non-commit wants are assumed to be satisfied
                 continue
             for parent in commit.parents:
@@ -479,6 +522,7 @@ class ProtocolGraphWalker(object):
         """
         haves = set(haves)
         earliest = min([self.store[h].commit_time for h in haves])
+
         for want in self._wants:
             if not self._is_satisfied(haves, want, earliest):
                 return False
@@ -493,7 +537,7 @@ class ProtocolGraphWalker(object):
         self._impl = impl_classes[ack_type](self)
 
 
-_GRAPH_WALKER_COMMANDS = ('have', 'done', None)
+_GRAPH_WALKER_COMMANDS = (b'have', b'done', None)
 
 
 class SingleAckGraphWalkerImpl(object):
@@ -508,13 +552,13 @@ class SingleAckGraphWalkerImpl(object):
             self.walker.send_ack(have_ref)
             self._sent_ack = True
 
-    def next(self):
+    def __next__(self):
         command, sha = self.walker.read_proto_line(_GRAPH_WALKER_COMMANDS)
-        if command in (None, 'done'):
+        if command in (None, b'done'):
             if not self._sent_ack:
                 self.walker.send_nak()
             return None
-        elif command == 'have':
+        elif command == b'have':
             return sha
 
 
@@ -529,12 +573,12 @@ class MultiAckGraphWalkerImpl(object):
     def ack(self, have_ref):
         self._common.append(have_ref)
         if not self._found_base:
-            self.walker.send_ack(have_ref, 'continue')
+            self.walker.send_ack(have_ref, b'continue')
             if self.walker.all_wants_satisfied(self._common):
                 self._found_base = True
         # else we blind ack within next
 
-    def next(self):
+    def __next__(self):
         while True:
             command, sha = self.walker.read_proto_line(_GRAPH_WALKER_COMMANDS)
             if command is None:
@@ -542,7 +586,7 @@ class MultiAckGraphWalkerImpl(object):
                 # in multi-ack mode, a flush-pkt indicates the client wants to
                 # flush but more have lines are still coming
                 continue
-            elif command == 'done':
+            elif command == b'done':
                 # don't nak unless no common commits were found, even if not
                 # everything is satisfied
                 if self._common:
@@ -550,10 +594,10 @@ class MultiAckGraphWalkerImpl(object):
                 else:
                     self.walker.send_nak()
                 return None
-            elif command == 'have':
+            elif command == b'have':
                 if self._found_base:
                     # blind ack
-                    self.walker.send_ack(sha, 'continue')
+                    self.walker.send_ack(sha, b'continue')
                 return sha
 
 
@@ -568,13 +612,13 @@ class MultiAckDetailedGraphWalkerImpl(object):
     def ack(self, have_ref):
         self._common.append(have_ref)
         if not self._found_base:
-            self.walker.send_ack(have_ref, 'common')
+            self.walker.send_ack(have_ref, b'common')
             if self.walker.all_wants_satisfied(self._common):
                 self._found_base = True
-                self.walker.send_ack(have_ref, 'ready')
+                self.walker.send_ack(have_ref, b'ready')
         # else we blind ack within next
 
-    def next(self):
+    def __next__(self):
         while True:
             command, sha = self.walker.read_proto_line(_GRAPH_WALKER_COMMANDS)
             if command is None:
@@ -582,7 +626,7 @@ class MultiAckDetailedGraphWalkerImpl(object):
                 if self.walker.http_req:
                     return None
                 continue
-            elif command == 'done':
+            elif command == b'done':
                 # don't nak unless no common commits were found, even if not
                 # everything is satisfied
                 if self._common:
@@ -590,11 +634,11 @@ class MultiAckDetailedGraphWalkerImpl(object):
                 else:
                     self.walker.send_nak()
                 return None
-            elif command == 'have':
+            elif command == b'have':
                 if self._found_base:
                     # blind ack; can happen if the client has more requests
                     # inflight
-                    self.walker.send_ack(sha, 'ready')
+                    self.walker.send_ack(sha, b'ready')
                 return sha
 
 
@@ -603,13 +647,18 @@ class ReceivePackHandler(Handler):
 
     def __init__(self, backend, args, proto, http_req=None,
                  advertise_refs=False):
+        assert type(args[0]) == bytes
         Handler.__init__(self, backend, proto, http_req=http_req)
         self.repo = backend.open_repository(args[0])
         self.advertise_refs = advertise_refs
 
+    def close(self):
+        if getattr(self.repo, 'close', None) is not None:
+            self.repo.close()
+
     @classmethod
     def capabilities(cls):
-        return ("report-status", "delete-refs", "side-band-64k")
+        return (b"report-status", b"delete-refs", b"side-band-64k")
 
     def _apply_pack(self, refs):
         all_exceptions = (IOError, OSError, ChecksumMismatch, ApplyDeltaError,
@@ -620,17 +669,17 @@ class ReceivePackHandler(Handler):
         try:
             p = self.repo.object_store.add_thin_pack(self.proto.read,
                                                      self.proto.recv)
-            status.append(('unpack', 'ok'))
-        except all_exceptions, e:
-            status.append(('unpack', str(e).replace('\n', '')))
+            status.append((b'unpack', b'ok'))
+        except all_exceptions as e:
+            status.append((b'unpack', str(e).replace('\n', '').encode('utf-8')))
             # The pack may still have been moved in, but it may contain broken
             # objects. We trust a later GC to clean it up.
 
         for oldsha, sha, ref in refs:
-            ref_status = 'ok'
+            ref_status = b'ok'
             try:
                 if sha == ZERO_SHA:
-                    if not 'delete-refs' in self.capabilities():
+                    if not b'delete-refs' in self.capabilities():
                         raise GitProtocolError(
                           'Attempted to delete refs without delete-refs '
                           'capability.')
@@ -643,14 +692,14 @@ class ReceivePackHandler(Handler):
                         self.repo.refs[ref] = sha
                     except all_exceptions:
                         ref_status = 'failed to write'
-            except KeyError, e:
+            except KeyError as e:
                 ref_status = 'bad ref'
             status.append((ref, ref_status))
 
         return status
 
     def _report_status(self, status):
-        if self.has_capability('side-band-64k'):
+        if self.has_capability(b'side-band-64k'):
             writer = BufferedPktLineWriter(
               lambda d: self.proto.write_sideband(1, d))
             write = writer.write
@@ -663,31 +712,32 @@ class ReceivePackHandler(Handler):
             flush = lambda: None
 
         for name, msg in status:
-            if name == 'unpack':
-                write('unpack %s\n' % msg)
-            elif msg == 'ok':
-                write('ok %s\n' % name)
+            if name == b'unpack':
+                write(b'unpack ' + msg + b'\n')
+            elif msg == b'ok':
+                write(b'ok ' + name + b'\n')
             else:
-                write('ng %s %s\n' % (name, msg))
+                write(b'ng ' + name + b' ' + msg + b'\n')
         write(None)
         flush()
 
     def handle(self):
-        refs = sorted(self.repo.get_refs().iteritems())
+        refs = sorted(self.repo.get_refs().items())
 
         if self.advertise_refs or not self.http_req:
             if refs:
+                refs[0] = [refs[0][0], refs[0][1]]
                 self.proto.write_pkt_line(
-                  "%s %s\x00%s\n" % (refs[0][1], refs[0][0],
-                                     self.capability_line()))
+                  refs[0][1] + b' ' + refs[0][0] + b'\x00' +
+                  self.capability_line() + b'\n')
                 for i in range(1, len(refs)):
-                    ref = refs[i]
-                    self.proto.write_pkt_line("%s %s\n" % (ref[1], ref[0]))
+                    ref = [refs[i][0], refs[i][1]]
+                    self.proto.write_pkt_line(ref[1] + b' ' + ref[0] + b'\n')
             else:
-                self.proto.write_pkt_line("%s capabilities^{}\0%s" % (
-                  ZERO_SHA, self.capability_line()))
+                self.proto.write_pkt_line(ZERO_SHA + b' capabilities^{}\0' +
+                  self.capability_line())
 
-            self.proto.write("0000")
+            self.proto.write(b"0000")
             if self.advertise_refs:
                 return
 
@@ -711,39 +761,47 @@ class ReceivePackHandler(Handler):
 
         # when we have read all the pack from the client, send a status report
         # if the client asked for it
-        if self.has_capability('report-status'):
+        if self.has_capability(b'report-status'):
             self._report_status(status)
 
 
 # Default handler classes for git services.
 DEFAULT_HANDLERS = {
-  'git-upload-pack': UploadPackHandler,
-  'git-receive-pack': ReceivePackHandler,
+  b'git-upload-pack': UploadPackHandler,
+  b'git-receive-pack': ReceivePackHandler,
   }
 
 
-class TCPGitRequestHandler(SocketServer.StreamRequestHandler):
+class TCPGitRequestHandler(socketserver.StreamRequestHandler):
 
     def __init__(self, handlers, *args, **kwargs):
         self.handlers = handlers
-        SocketServer.StreamRequestHandler.__init__(self, *args, **kwargs)
+        socketserver.StreamRequestHandler.__init__(self, *args, **kwargs)
 
     def handle(self):
-        proto = ReceivableProtocol(self.connection.recv, self.wfile.write)
-        command, args = proto.read_cmd()
-        logger.info('Handling %s request, args=%s', command, args)
+        with ReceivableProtocol(self.connection.recv, self.wfile.write, None) as proto:
+            command, args = proto.read_cmd()
 
-        cls = self.handlers.get(command, None)
-        if not callable(cls):
-            raise GitProtocolError('Invalid service %s' % command)
-        h = cls(self.server.backend, args, proto)
-        h.handle()
+            logger.info('Handling %s request, args="%s"',
+                command.decode('ascii', 'replace'),
+                ', '.join(arg.decode('ascii') for arg in args))
+
+            cls = self.handlers.get(command, None)
+            if not isinstance(cls, collections.Callable):
+                raise GitProtocolError('Invalid service %s' % command.decode(
+                    'ascii', 'replace'))
+
+            assert type(args[0]) == bytes
+            with cls(self.server.backend, args, proto) as h:
+                h.handle()
+
+            logger.info('Finished handling request')
 
 
-class TCPGitServer(SocketServer.TCPServer):
+class TCPGitServer(socketserver.TCPServer):
 
     allow_reuse_address = True
-    serve = SocketServer.TCPServer.serve_forever
+    serve = socketserver.TCPServer.serve_forever
 
     def _make_handler(self, *args, **kwargs):
         return TCPGitRequestHandler(self.handlers, *args, **kwargs)
@@ -754,7 +812,7 @@ class TCPGitServer(SocketServer.TCPServer):
             self.handlers.update(handlers)
         self.backend = backend
         logger.info('Listening for TCP connections on %s:%d', listen_addr, port)
-        SocketServer.TCPServer.__init__(self, (listen_addr, port),
+        socketserver.TCPServer.__init__(self, (listen_addr, port),
                                         self._make_handler)
 
     def verify_request(self, request, client_address):
@@ -779,8 +837,8 @@ def main(argv=sys.argv):
     server.serve_forever()
 
 
-def serve_command(handler_cls, argv=sys.argv, backend=None, inf=sys.stdin,
-                  outf=sys.stdout):
+def serve_command(handler_cls, argv=sys.argv, backend=None, inf=sys.stdin.buffer,
+                  outf=sys.stdout.buffer):
     """Serve a single command.
 
     This is mostly useful for the implementation of commands used by e.g. git+ssh.
@@ -794,38 +852,44 @@ def serve_command(handler_cls, argv=sys.argv, backend=None, inf=sys.stdin,
     """
     if backend is None:
         backend = FileSystemBackend()
+
+    # it's a binary writer
     def send_fn(data):
         outf.write(data)
         outf.flush()
-    proto = Protocol(inf.read, send_fn)
-    handler = handler_cls(backend, argv[1:], proto)
-    # FIXME: Catch exceptions and write a single-line summary to outf.
-    handler.handle()
+
+    recv_fn = getattr(inf, 'buffer', inf).read
+
+    with Protocol(inf.read, send_fn, None) as proto:
+        with handler_cls(backend, [arg.encode(sys.getfilesystemencoding()) for arg in argv[1:]], proto) as handler:
+            # FIXME: Catch exceptions and write a single-line summary to outf.
+            handler.handle()
+
     return 0
 
 
 def generate_info_refs(repo):
     """Generate an info refs file."""
     refs = repo.get_refs()
-    for name in sorted(refs.iterkeys()):
+    for name in sorted(iter(refs)):
         # get_refs() includes HEAD as a special case, but we don't want to
         # advertise it
-        if name == 'HEAD':
+        if name == b'HEAD':
             continue
         sha = refs[name]
         o = repo.object_store[sha]
         if not o:
             continue
-        yield '%s\t%s\n' % (sha, name)
+        yield sha + b'\t' + name + b'\n'
         peeled_sha = repo.get_peeled(name)
         if peeled_sha != sha:
-            yield '%s\t%s^{}\n' % (peeled_sha, name)
+            yield peeled_sha + b'\t' + name + b'^{}\n'
 
 
 def generate_objects_info_packs(repo):
     """Generate an index for for packs."""
     for pack in repo.object_store.packs:
-        yield 'P pack-%s.pack\n' % pack.name()
+        yield b'P pack-' + pack.name() + b'.pack\n'
 
 
 def update_server_info(repo):
@@ -835,7 +899,7 @@ def update_server_info(repo):
     similar to "git update-server-info".
     """
     repo._put_named_file(os.path.join('info', 'refs'),
-        "".join(generate_info_refs(repo)))
+        b"".join(generate_info_refs(repo)))
 
     repo._put_named_file(os.path.join('objects', 'info', 'packs'),
-        "".join(generate_objects_info_packs(repo)))
+        b"".join(generate_objects_info_packs(repo)))
