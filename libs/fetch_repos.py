@@ -25,22 +25,22 @@ def git_apply( local_repo, patch ):
 	commit, diff, version = dulwich.patch.git_am_patch_split(f)
 
 def pre_build_fetch(opts):
-	#if os.path.exists("mangos.git"):
-	#	print("Updating MaNGOS sourcecode")
-	#	git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=False)
-	#else:
-	#	print("MaNGOS is not present; checking out MaNGOS")
-	#	git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=True)
+	if os.path.exists("mangos.git"):
+		print("Updating MaNGOS sourcecode")
+		git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=False)
+	else:
+		print("MaNGOS is not present; checking out MaNGOS")
+		git_clone('git://github.com/mangos/mangos.git', 'mangos.git', new=True)
 
 	if os.path.exists("mangos.git/src/bindings/ScriptDev2"):
 		print("Updating ScriptDev2 sourcecode")
-		#git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScriptDev2', new=False)
+		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScriptDev2', new=False)
 	else:
 		print("ScriptDev2 is not present; checking out ScriptDev2")
-		#git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScriptDev2')
+		git_clone('git://github.com/scriptdev2/scriptdev2.git', 'mangos.git/src/bindings/ScriptDev2')
 
-	#if opts.debug: print("Applying ScriptDev2 Patch for MaNGOS")
-	#if opts.patch and os.name != "nt": git_apply('mangos.git', 'mangos.git/src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
+	if opts.debug: print("Applying ScriptDev2 Patch for MaNGOS")
+	if opts.patch and os.name != "nt": git_apply('mangos.git', 'mangos.git/src/bindings/ScriptDev2/patches/'+opts.sd2_patch)
 
 def post_build_fetch(opts):
 	import pysvn
@@ -49,15 +49,15 @@ def post_build_fetch(opts):
 	if opts.debug: print ("current dir: "+os.getcwd())
 	if os.path.exists("sd2-acid"):
 		print ("Updating ACID sourcecode")
-		#svn_client.update('./sd2-acid')
+		svn_client.update('./sd2-acid')
 	else:
 		print ("ACID is not present; checking out ACID")
-		#svn_client.checkout('https://sd2-acid.svn.sourceforge.net/svnroot/sd2-acid/trunk', './sd2-acid')
+		svn_client.checkout('https://sd2-acid.svn.sourceforge.net/svnroot/sd2-acid/trunk', './sd2-acid')
 
 	if os.path.exists("unifieddb"):
 		print ("Updating UDB sourcecode")
-		#svn_client.update('./unifieddb')
+		svn_client.update('./unifieddb')
 	else:
 		print ("UDB is not present; checking out UDB")
-		#svn_client.checkout('https://unifieddb.svn.sourceforge.net/svnroot/unifieddb/trunk', './unifieddb')
+		svn_client.checkout('https://unifieddb.svn.sourceforge.net/svnroot/unifieddb/trunk', './unifieddb')
 

@@ -1,8 +1,8 @@
 import  os, sys, subprocess, shutil, fnmatch
 
-def make():
+def make(opts):
     print ("Building...")
-    #print "current dir: "+os.getcwd()
+    #if opts.debug: print ("current dir: "+os.getcwd())
 
     if os.path.basename(os.getcwd()) != "mangos":
         os.chdir("mangos")

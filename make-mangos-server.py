@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
 	if opts.debug: print ("Building Server")
 	if os.name == "nt":
-		if opts.build: windows_build.make()
+		if opts.build: windows_build.make(opts)
 		if opts.install: windows_build.install(opts)
 	else:
 		if opts.build: linux_build.make(opts)
