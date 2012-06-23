@@ -7,71 +7,57 @@ import fetch_repos
 import windows_build
 import linux_build
 
-from optparse import OptionParser
+import argparse
 def parse_cmd_args():
 	if os.name == "nt":
 		install_dir="C:\\MaNGOS"
 	else:
 		install_dir="/opt/mangos"
 
-	parser = OptionParser()
-	parser.add_option("--mangos-destdir", "--install-dir", "--destdir",
-		action="store",
-		dest="mangos_destdir",
+	parser = argparse.ArgumentParser(description='Build MaNGOS Server python script')
+	parser.add_argument("--mangos-destdir", "--install-dir", "--destdir",
 		default=install_dir)
 
-	parser.add_option("--sd2-patch", "--patch", "--sd2", 
-		action="store",
-		dest="sd2_patch",
+	parser.add_argument("--sd2-patch", "--patch", "--sd2", 
 		default="MaNGOS-11167-ScriptDev2.patch")
 		
-	parser.add_option("--build-dir",
-		action="store",
-		dest="build_dir",
+	parser.add_argument("--build-dir",
 		default=".")
 
-	parser.add_option("--no-build",
+	parser.add_argument("--no-build",
 		action="store_false",
-		dest="build",
-		default=True)
+		dest="build")
 
-	parser.add_option("--no-install",
+	parser.add_argument("--no-install",
 		action="store_false",
-		dest="install",
-		default=True)
+		dest="install")
 
-	parser.add_option("--no-fetch",
+	parser.add_argument("--no-fetch",
 		action="store_false",
-		dest="fetch",
-		default=True)
+		dest="fetch")
 
-	parser.add_option("--no-post-fetch",
+	parser.add_argument("--no-post-fetch",
 		action="store_false",
-		dest="post_fetch",
-		default=True)
+		dest="post_fetch")
 
-	parser.add_option("--no-rebuild",
+	parser.add_argument("--no-rebuild",
 		action="store_false",
-		dest="rebuild",
-		default=True)
+		dest="rebuild")
 
-	parser.add_option("--debug",
+	parser.add_argument("--no-patch",
+		action="store_false",
+		dest="patch")
+
+	parser.add_argument("--debug",
 		action="store_true",
-		dest="debug",
-		default=False)
+		dest="debug")
 	
-	parser.add_option("--no-patch",
-		action="store_false",
-		dest="patch",
-		default=True)
-
-	(options, args) = parser.parse_args()
-	return options
+	return parser.parse_args()
 
 if __name__ == '__main__':
 	opts = parse_cmd_args()
 
-	if opts.debug: print ("Src Build Dir:", opts.build_dir)
+	if opts.debug: print ("Src Build Dir: "+ opts.build_dir)
 	if opts.build_dir == ".":
 		opts.build_dir = os.getcwd()
 	else:

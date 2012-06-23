@@ -10,19 +10,19 @@ def make():
     try:
         mangos = subprocess.call("msbuild win\\mangosdVC90.sln /p:Configuration=Release", shell=True)
         if mangos < 0:
-            sys.stderr.write ("Child was terminated by signal"+ -mangos)
+            sys.stderr.write ("Child was terminated by signal "+ -mangos +" \n")
         elif mangos > 0:
-            sys.stderr.write ("Child returned"+ mangos)
+            sys.stderr.write ("Child returned "+ mangos+" \n")
     except OSError, e:
-        sys.stderr.write ("Execution failed:"+ e)
+        sys.stderr.write ("Execution failed: "+ e+" \n")
     try:
         sd2 = subprocess.call("msbuild src\\bindings\\ScriptDev2\\scriptVC90.sln /p:Configuration=Release", shell=True)
         if sd2 < 0:
-            sys.stderr.write ("Child was terminated by signal"+ -sd2)
+            sys.stderr.write ("Child was terminated by signal "+ -sd2+" \n")
         elif sd2 > 0:
-            sys.stderr.write ("Child returned"+ sd2)
+            sys.stderr.write ("Child returned "+ sd2+" \n")
     except OSError, e:
-        sys.stderr.write ("Execution failed:"+ e)
+        sys.stderr.write ("Execution failed: "+ e+" \n")
 
 def install(opts):
     if os.path.exists("bin\\Win32_Release"):

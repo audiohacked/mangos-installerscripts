@@ -12,11 +12,9 @@ def make(make_opts):
     if make_opts.debug: print (" ".join(config_cmd))
     print "Install Dir: ", make_opts.mangos_destdir
     if make_opts.debug: print ("Current Dir: ", os.getcwd())
-    if os.path.basename(os.getcwd()) != "mangos.git":
-        os.chdir("mangos.git")
+    if os.path.basename(os.getcwd()) != "mangos.git": os.chdir("mangos.git")
     if make_opts.debug: print ("Current Dir: ", os.getcwd())
-    if os.path.exists("build"):
-        shutil.rmtree("build", ignore_errors=True)
+    if os.path.exists("build"): shutil.rmtree("build", ignore_errors=True)
     os.mkdir("build")
     os.chdir("build")
     if make_opts.debug: print ("Current Dir: ", os.getcwd())
